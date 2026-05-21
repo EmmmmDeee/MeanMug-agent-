@@ -11,3 +11,5 @@ build/
 .ruff_cache/
 .mypy_cache/
 *.log
+backups/
+intelligence.db

@@ -41,6 +41,15 @@ class GlmClient:
         user_block = self._render_user_block(raw, indicators)
         return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
 
+    async def analyze_pivot(self, indicator: str, indicators: dict[str, list[str]]) -> GlmResult:
+        focus = (
+            f"PIVOT FOCUS — Treat `{indicator}` as the sole anchor. "
+            "Enumerate downstream pivots recursively until each branch resolves "
+            "or hits a documented dead end. Be exhaustive within the report cap.\n\n"
+        )
+        user_block = focus + self._render_user_block(indicator, indicators)
+        return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
+
     async def _chat(self, *, system: str, user: str) -> GlmResult:
         payload: dict[str, object] = {
             "model": self._config.model,

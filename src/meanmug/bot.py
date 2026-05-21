@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import pkgutil
 from importlib import import_module
+from pathlib import Path
 
 import aiohttp
 import aiosqlite
@@ -11,14 +12,17 @@ from discord.ext import commands
 
 from meanmug import cogs
 from meanmug.core.config import Config
+from meanmug.services.backup import snapshot, verify_essentials
 from meanmug.services.glm import GlmClient
 from meanmug.services.storage import open_db
 
 log = logging.getLogger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class MeanMugBot(commands.Bot):
-    """Core engine: lifecycle, gateway, shared HTTP + DB handles."""
+    """Core engine: lifecycle, gateway, shared HTTP + DB + GLM handles."""
 
     session: aiohttp.ClientSession
     db: aiosqlite.Connection
@@ -29,6 +33,8 @@ class MeanMugBot(commands.Bot):
         intents.message_content = True
         super().__init__(command_prefix=config.command_prefix, intents=intents)
         self.config = config
+        self.repo_root = REPO_ROOT
+        verify_essentials(self.repo_root)
 
     async def setup_hook(self) -> None:
         self.session = aiohttp.ClientSession(
@@ -43,6 +49,11 @@ class MeanMugBot(commands.Bot):
             await self.tree.sync(guild=guild)
         else:
             await self.tree.sync()
+        try:
+            result = snapshot(self.repo_root)
+            log.info("startup snapshot: %s", result)
+        except Exception:
+            log.exception("startup snapshot failed")
         log.info("gateway and intelligence fabric initialized")
 
     async def close(self) -> None:
