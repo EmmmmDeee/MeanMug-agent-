@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import aiohttp
 
@@ -11,6 +13,7 @@ from meanmug.core.config import GlmConfig
 log = logging.getLogger(__name__)
 
 _PROMPT_FILE = Path(__file__).resolve().parents[3] / "SYSTEM_PROMPT.md"
+_MAX_ENRICHMENT_CHARS = 4000
 
 
 def load_system_prompt() -> str:
@@ -30,6 +33,10 @@ class GlmResult:
     reasoning: str | None
 
 
+class GlmError(RuntimeError):
+    pass
+
+
 class GlmClient:
     """Thin async wrapper over an OpenAI-compatible chat.completions endpoint."""
 
@@ -37,17 +44,27 @@ class GlmClient:
         self._session = session
         self._config = config
 
-    async def analyze_osint(self, raw: str, indicators: dict[str, list[str]]) -> GlmResult:
-        user_block = self._render_user_block(raw, indicators)
+    async def analyze_osint(
+        self,
+        raw: str,
+        indicators: dict[str, list[str]],
+        enrichment: dict[str, Any] | None = None,
+    ) -> GlmResult:
+        user_block = self._render_user_block(raw, indicators, enrichment)
         return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
 
-    async def analyze_pivot(self, indicator: str, indicators: dict[str, list[str]]) -> GlmResult:
+    async def analyze_pivot(
+        self,
+        indicator: str,
+        indicators: dict[str, list[str]],
+        enrichment: dict[str, Any] | None = None,
+    ) -> GlmResult:
         focus = (
             f"PIVOT FOCUS — Treat `{indicator}` as the sole anchor. "
             "Enumerate downstream pivots recursively until each branch resolves "
             "or hits a documented dead end. Be exhaustive within the report cap.\n\n"
         )
-        user_block = focus + self._render_user_block(indicator, indicators)
+        user_block = focus + self._render_user_block(indicator, indicators, enrichment)
         return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
 
     async def _chat(self, *, system: str, user: str) -> GlmResult:
@@ -83,19 +100,30 @@ class GlmClient:
         return GlmResult(content=content, reasoning=reasoning)
 
     @staticmethod
-    def _render_user_block(raw: str, indicators: dict[str, list[str]]) -> str:
+    def _render_user_block(
+        raw: str,
+        indicators: dict[str, list[str]],
+        enrichment: dict[str, Any] | None,
+    ) -> str:
         def fmt(values: list[str]) -> str:
             return ", ".join(values) if values else "(none)"
 
-        return (
-            "Pre-extracted indicators:\n"
-            f"- IPs: {fmt(indicators.get('ips', []))}\n"
-            f"- Domains: {fmt(indicators.get('domains', []))}\n"
-            f"- Emails: {fmt(indicators.get('emails', []))}\n"
-            "\nOperator input:\n"
-            f"{raw.strip()}"
-        )
-
-
-class GlmError(RuntimeError):
-    pass
+        parts = [
+            "Pre-extracted indicators:",
+            f"- IPs: {fmt(indicators.get('ips', []))}",
+            f"- Domains: {fmt(indicators.get('domains', []))}",
+            f"- Emails: {fmt(indicators.get('emails', []))}",
+        ]
+        if enrichment:
+            blob = json.dumps(enrichment, indent=2, sort_keys=True, default=str)
+            if len(blob) > _MAX_ENRICHMENT_CHARS:
+                blob = blob[:_MAX_ENRICHMENT_CHARS] + "\n... (truncated)"
+            parts.append("")
+            parts.append("Live enrichment (fresh lookups; treat as authoritative for this run):")
+            parts.append("```json")
+            parts.append(blob)
+            parts.append("```")
+        parts.append("")
+        parts.append("Operator input:")
+        parts.append(raw.strip())
+        return "\n".join(parts)

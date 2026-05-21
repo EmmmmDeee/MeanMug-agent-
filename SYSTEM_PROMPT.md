@@ -71,8 +71,16 @@ preamble:
 
 Hard limits: total report ≤ 1800 characters before chunking. Plain
 Markdown. No JSON, no wrapping fences, no headings beyond the five
-above. **Never fabricate** WHOIS, geolocation, ASN, breach, or
-attribution data — if you don't have it, say so in *Caveats*.
+above.
+
+**Live enrichment.** Each request may include a `Live enrichment` JSON
+block. Treat it as authoritative for this run — it is the output of
+fresh keyless lookups: RDAP (IP + domain), DoH DNS (A / AAAA / MX / NS /
+TXT / PTR), IPwhois geolocation + ASN, and the Tor exit-node list. Quote
+specific fields when citing (`ptr`, `asn`, `registrar`, `mx`, `tor_exit`,
+etc.). Anything **not** in the enrichment block and not in the operator
+input remains unknown — **never fabricate** WHOIS, breach, or attribution
+data; surface gaps in *Caveats*.
 
 ## Output Mechanics — Discord-shaped
 

@@ -42,6 +42,7 @@ src/meanmug/
     ops.py            /changelog, /backup, /health
   services/           Discord-agnostic, individually testable
     extract.py        IP / domain / email regex
+    enrich.py         Keyless live lookups: DoH DNS, RDAP, IP geo/ASN, Tor exits
     glm.py            GLM-5.1 client; loads SYSTEM_PROMPT.md at import
     discord_io.py     2000-char-safe paragraph-aware text chunker
     storage.py        SQLite schema + audit and case helpers
@@ -96,5 +97,30 @@ omit for global sync.
 Three runtime packages, all async:
 
 - `discord.py` — gateway + slash commands
-- `aiohttp` — GLM HTTP transport (pooled)
+- `aiohttp` — GLM HTTP transport + enrichment lookups (pooled)
 - `aiosqlite` — local audits + case persistence
+
+Dev:
+
+```
+pip install -e .[dev]
+pytest -q
+```
+
+## Enrichment pipeline
+
+On every `/osint` or `/pivot`, indicators are enriched concurrently
+against keyless public sources before reaching GLM:
+
+| Source | Fields | Lookups |
+| --- | --- | --- |
+| Cloudflare DoH | A / AAAA / MX / NS / TXT / PTR | DNS for domains, rDNS for IPs |
+| `rdap.org` | network name, country, registrar, registration dates, nameservers | IPs + domains |
+| `ipwho.is` | country, region, city, ASN, ISP, proxy flag | IPs |
+| Tor Project exit list | exit-node membership | IPs |
+
+Results are TTL-cached (1h for lookups, 6h for the Tor list). Per-user
+cooldowns (1 use / 20 s) on the GLM-hitting commands cap token spend.
+Each request encodes the enrichment as a JSON block in the user
+message; GLM is instructed to cite specific fields (`ptr`, `asn`,
+`registrar`, `tor_exit`, …) rather than hedge them as unknown.

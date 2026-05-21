@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from meanmug.services.discord_io import chunk_text
+from meanmug.services.enrich import enrich_indicators
 from meanmug.services.extract import extract_indicators
 from meanmug.services.glm import GlmError
 from meanmug.services.storage import (
@@ -20,6 +21,12 @@ log = logging.getLogger(__name__)
 
 FOOTER = "MeanMug-Agent | GLM-5.1 OSINT Fabric"
 MAX_RAW_BYTES = 256 * 1024
+COOLDOWN_RATE = 1
+COOLDOWN_PER = 20.0
+
+
+def _per_user(interaction: discord.Interaction) -> Optional[discord.User]:
+    return interaction.user
 
 
 class OSINTCog(commands.Cog):
@@ -34,6 +41,7 @@ class OSINTCog(commands.Cog):
         file="Optional file (logs, dumps, emails). Read as UTF-8.",
         case="Optional case name to append this audit to.",
     )
+    @app_commands.checks.cooldown(COOLDOWN_RATE, COOLDOWN_PER, key=_per_user)
     async def osint(
         self,
         interaction: discord.Interaction,
@@ -50,9 +58,10 @@ class OSINTCog(commands.Cog):
         case_id = await self._resolve_case(case)
         raw = await self._ingest(input_data, file)
         indicators = extract_indicators(raw)
+        enrichment = await enrich_indicators(self.bot.session, indicators)
 
         try:
-            result = await self.bot.glm.analyze_osint(raw, indicators)
+            result = await self.bot.glm.analyze_osint(raw, indicators, enrichment=enrichment)
         except GlmError as exc:
             log.warning("GLM osint failed: %s", exc)
             await record_audit(self.bot.db, interaction.user.id, raw, case_id=case_id)
@@ -62,13 +71,14 @@ class OSINTCog(commands.Cog):
         await record_audit(
             self.bot.db, interaction.user.id, raw, analysis=result.content, case_id=case_id
         )
-        await self._dispatch(interaction, indicators, result.content, case=case)
+        await self._dispatch(interaction, indicators, enrichment, result.content, case=case)
 
     @app_commands.command(name="pivot", description="Pursue every downstream lead from one indicator.")
     @app_commands.describe(
         indicator="A single indicator (IP, domain, email, alias).",
         case="Optional case name to append this audit to.",
     )
+    @app_commands.checks.cooldown(COOLDOWN_RATE, COOLDOWN_PER, key=_per_user)
     async def pivot(
         self,
         interaction: discord.Interaction,
@@ -83,9 +93,10 @@ class OSINTCog(commands.Cog):
 
         case_id = await self._resolve_case(case)
         indicators = extract_indicators(indicator)
+        enrichment = await enrich_indicators(self.bot.session, indicators)
 
         try:
-            result = await self.bot.glm.analyze_pivot(indicator, indicators)
+            result = await self.bot.glm.analyze_pivot(indicator, indicators, enrichment=enrichment)
         except GlmError as exc:
             log.warning("GLM pivot failed: %s", exc)
             await record_audit(self.bot.db, interaction.user.id, indicator, case_id=case_id)
@@ -95,7 +106,9 @@ class OSINTCog(commands.Cog):
         await record_audit(
             self.bot.db, interaction.user.id, indicator, analysis=result.content, case_id=case_id
         )
-        await self._dispatch(interaction, indicators, result.content, case=case, title="Pivot Report")
+        await self._dispatch(
+            interaction, indicators, enrichment, result.content, case=case, title="Pivot Report"
+        )
 
     @app_commands.command(name="history", description="Show your recent audits.")
     @app_commands.describe(limit="Number of audits to show (1-25).")
@@ -139,12 +152,15 @@ class OSINTCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         indicators: dict[str, list[str]],
+        enrichment: dict,
         analysis: str,
         case: Optional[str] = None,
         title: str = "OSINT Intelligence Report",
     ) -> None:
         chunks = chunk_text(analysis)
-        embed = self._build_header_embed(indicators, chunks[0], case=case, title=title)
+        embed = self._build_header_embed(
+            indicators, enrichment, chunks[0], case=case, title=title
+        )
         await interaction.followup.send(embed=embed)
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk)
@@ -152,6 +168,7 @@ class OSINTCog(commands.Cog):
     @staticmethod
     def _build_header_embed(
         indicators: dict[str, list[str]],
+        enrichment: dict,
         analysis_head: str,
         case: Optional[str],
         title: str,
@@ -168,6 +185,9 @@ class OSINTCog(commands.Cog):
                 value=f"`{', '.join(values)}`" if values else "_none_",
                 inline=False,
             )
+        flags = _enrichment_flags(enrichment)
+        if flags:
+            embed.add_field(name="Enrichment", value=" · ".join(flags), inline=False)
         if case:
             embed.add_field(name="Case", value=f"`{case}`", inline=False)
         embed.set_footer(text=FOOTER)
@@ -190,6 +210,20 @@ class OSINTCog(commands.Cog):
             else interaction.response.send_message
         )
         await send(message, ephemeral=True)
+
+
+def _enrichment_flags(enrichment: dict) -> list[str]:
+    flags: list[str] = []
+    ip_count = len(enrichment.get("ips", {}))
+    dom_count = len(enrichment.get("domains", {}))
+    if ip_count:
+        tor_hits = sum(1 for v in enrichment["ips"].values() if v.get("tor_exit"))
+        flags.append(f"{ip_count} IP" + ("s" if ip_count != 1 else ""))
+        if tor_hits:
+            flags.append(f"⚠ {tor_hits} Tor exit")
+    if dom_count:
+        flags.append(f"{dom_count} domain" + ("s" if dom_count != 1 else ""))
+    return flags
 
 
 async def setup(bot: commands.Bot) -> None:
