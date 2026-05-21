@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from meanmug import cogs
 from meanmug.core.config import Config
+from meanmug.services.glm import GlmClient
 from meanmug.services.storage import open_db
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class MeanMugBot(commands.Bot):
 
     session: aiohttp.ClientSession
     db: aiosqlite.Connection
+    glm: GlmClient
 
     def __init__(self, config: Config) -> None:
         intents = discord.Intents.default()
@@ -33,6 +35,7 @@ class MeanMugBot(commands.Bot):
             connector=aiohttp.TCPConnector(limit=self.config.http_pool_limit),
         )
         self.db = await open_db(self.config.database_path)
+        self.glm = GlmClient(self.session, self.config.glm)
         await self._load_cogs()
         if self.config.guild_id:
             guild = discord.Object(id=self.config.guild_id)
