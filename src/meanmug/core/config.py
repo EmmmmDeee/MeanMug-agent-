@@ -10,6 +10,8 @@ class Config:
     guild_id: int | None
     command_prefix: str
     log_level: str
+    database_path: str
+    http_pool_limit: int
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -22,4 +24,6 @@ class Config:
             guild_id=int(guild_raw) if guild_raw else None,
             command_prefix=os.environ.get("COMMAND_PREFIX", "!"),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
+            database_path=os.environ.get("DATABASE_PATH", "intelligence.db"),
+            http_pool_limit=int(os.environ.get("HTTP_POOL_LIMIT", "50")),
         )
