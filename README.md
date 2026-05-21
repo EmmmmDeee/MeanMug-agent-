@@ -83,16 +83,57 @@ src/meanmug/
 5. **Sole GLM endpoint.** Reasoning goes only to the configured z.ai
    chat completions URL.
 
-## Run
+## Deploy
+
+### 1. Discord Developer Portal
+
+1. Create an app at https://discord.com/developers/applications.
+2. **Bot** tab: create a bot, copy the token → `DISCORD_TOKEN`.
+3. **Bot** tab → Privileged Gateway Intents: enable **MESSAGE CONTENT INTENT** (required to read sibling-bot messages in intel channels).
+4. **OAuth2 → URL Generator**: scopes `bot` + `applications.commands`; bot permissions: `Send Messages`, `Embed Links`, `Add Reactions`, `Read Message History`. Invite to your server.
+
+### 2. z.ai GLM-5.1
+
+Get an API key from https://z.ai. The default `GLM_BASE_URL` and `GLM_MODEL` work for z.ai's standard chat endpoint.
+
+### 3. Install and run
 
 ```
-cp .env.example .env       # set DISCORD_TOKEN and GLM_API_KEY
+cp .env.example .env       # fill DISCORD_TOKEN, GLM_API_KEY
 pip install -e .
 meanmug
 ```
 
-Set `DISCORD_GUILD_ID` for instant slash-command sync during development;
-omit for global sync.
+The bot must be run from the repository root (or set `MEANMUG_SYSTEM_PROMPT_PATH`) so it can find `SYSTEM_PROMPT.md`. On first run it verifies essential files, opens the SQLite store, takes a config snapshot into `backups/`, then syncs slash commands.
+
+`DISCORD_GUILD_ID=<id>` makes slash-command sync instant per guild — recommended during development. Leave it unset for global sync (≈1 hr propagation).
+
+### 4. Wire up live ingestion (optional)
+
+```
+INTEL_CHANNEL_IDS=123,456    # comma-separated channel IDs to listen on
+ALERT_CHANNEL_ID=789         # optional: where to post autonomous alerts
+```
+
+Then in Discord:
+
+```
+/watch identifier:badactor kind:handle note:apt-of-interest
+/watch identifier:evil.io   kind:domain
+```
+
+Anything a sibling bot posts in `123` or `456` that mentions `@badactor` or `evil.io` triggers MeanMug.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Normal shutdown (Ctrl+C) |
+| 1 | Unexpected runtime error (check logs) |
+| 2 | Missing required env var |
+| 3 | Essential config file missing (`SYSTEM_PROMPT.md` etc.) |
+| 4 | Discord rejected the token |
+| 5 | Privileged intents not enabled in Developer Portal |
 
 ## GLM-5.1 configuration
 

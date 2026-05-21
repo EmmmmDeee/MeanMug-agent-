@@ -49,7 +49,11 @@ def test_payload_shape_with_enrichment():
     client = GlmClient(fake, cfg.glm)
     enrichment = {"ips": {"8.8.8.8": {"geo": {"asn": "AS15169"}}}}
     asyncio.run(
-        client.analyze_osint("check 8.8.8.8", {"ips": ["8.8.8.8"], "domains": [], "emails": []}, enrichment=enrichment)
+        client.analyze_osint(
+            "check 8.8.8.8",
+            {"ips": ["8.8.8.8"], "domains": [], "emails": [], "handles": ["alice"]},
+            enrichment=enrichment,
+        )
     )
     assert fake.last_url.endswith("/chat/completions")
     assert fake.last_payload["model"] == cfg.glm.model
@@ -57,6 +61,7 @@ def test_payload_shape_with_enrichment():
         assert fake.last_payload["thinking"] == {"type": "enabled"}
     user_block = fake.last_payload["messages"][1]["content"]
     assert "Pre-extracted indicators" in user_block
+    assert "Handles: alice" in user_block
     assert "Live enrichment" in user_block
     assert "AS15169" in user_block
     assert fake.last_headers["Authorization"].startswith("Bearer ")
@@ -67,7 +72,10 @@ def test_pivot_prepends_focus():
     fake = _FakeSession()
     client = GlmClient(fake, cfg.glm)
     asyncio.run(
-        client.analyze_pivot("evil.io", {"ips": [], "domains": ["evil.io"], "emails": []})
+        client.analyze_pivot(
+            "evil.io",
+            {"ips": [], "domains": ["evil.io"], "emails": [], "handles": []},
+        )
     )
     user_block = fake.last_payload["messages"][1]["content"]
     assert user_block.startswith("PIVOT FOCUS")

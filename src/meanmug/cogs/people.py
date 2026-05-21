@@ -13,6 +13,7 @@ from meanmug.services.glm import GlmError
 from meanmug.services.people import enrich_person
 from meanmug.services.storage import (
     add_watch,
+    get_case_by_name,
     list_watches,
     record_audit,
     remove_watch,
@@ -201,8 +202,6 @@ class PeopleCog(commands.Cog):
     async def _resolve_case_id(self, case: Optional[str]) -> Optional[int]:
         if not case:
             return None
-        from meanmug.services.storage import get_case_by_name
-
         row = await get_case_by_name(self.bot.db, case)
         if row is None:
             raise app_commands.AppCommandError(f"case `{case}` does not exist.")

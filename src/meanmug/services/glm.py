@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,19 +13,34 @@ from meanmug.core.config import GlmConfig
 
 log = logging.getLogger(__name__)
 
-_PROMPT_FILE = Path(__file__).resolve().parents[3] / "SYSTEM_PROMPT.md"
 _MAX_ENRICHMENT_CHARS = 4000
 
 
+def _candidate_prompt_paths() -> list[Path]:
+    """Locations to search for SYSTEM_PROMPT.md, in priority order."""
+    env_override = os.environ.get("MEANMUG_SYSTEM_PROMPT_PATH")
+    candidates: list[Path] = []
+    if env_override:
+        candidates.append(Path(env_override))
+    candidates.append(Path.cwd() / "SYSTEM_PROMPT.md")
+    # src/meanmug/services/glm.py → parents[3] is the repo root for editable installs
+    candidates.append(Path(__file__).resolve().parents[3] / "SYSTEM_PROMPT.md")
+    return candidates
+
+
 def load_system_prompt() -> str:
-    if not _PROMPT_FILE.is_file():
-        raise FileNotFoundError(
-            f"essential config missing: {_PROMPT_FILE}. Refusing to start."
-        )
-    return _PROMPT_FILE.read_text(encoding="utf-8")
+    """Read SYSTEM_PROMPT.md from the first existing candidate path.
 
-
-OSINT_SYSTEM_PROMPT = load_system_prompt()
+    Resolved lazily (not at module import) so that test runners and packaging
+    layouts that don't have the file at parents[3] still work.
+    """
+    for path in _candidate_prompt_paths():
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    raise FileNotFoundError(
+        "SYSTEM_PROMPT.md not found. Set MEANMUG_SYSTEM_PROMPT_PATH or run "
+        "the bot from the repository root."
+    )
 
 
 @dataclass(frozen=True)
@@ -43,6 +59,11 @@ class GlmClient:
     def __init__(self, session: aiohttp.ClientSession, config: GlmConfig) -> None:
         self._session = session
         self._config = config
+        self._system_prompt = load_system_prompt()
+
+    @property
+    def system_prompt(self) -> str:
+        return self._system_prompt
 
     async def analyze_osint(
         self,
@@ -51,7 +72,7 @@ class GlmClient:
         enrichment: dict[str, Any] | None = None,
     ) -> GlmResult:
         user_block = self._render_user_block(raw, indicators, enrichment)
-        return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
+        return await self._chat(system=self._system_prompt, user=user_block)
 
     async def analyze_person(
         self,
@@ -78,7 +99,7 @@ class GlmClient:
             parts.append("```json")
             parts.append(blob)
             parts.append("```")
-        return await self._chat(system=OSINT_SYSTEM_PROMPT, user="\n".join(parts))
+        return await self._chat(system=self._system_prompt, user="\n".join(parts))
 
     async def analyze_pivot(
         self,
@@ -92,7 +113,7 @@ class GlmClient:
             "or hits a documented dead end. Be exhaustive within the report cap.\n\n"
         )
         user_block = focus + self._render_user_block(indicator, indicators, enrichment)
-        return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
+        return await self._chat(system=self._system_prompt, user=user_block)
 
     async def _chat(self, *, system: str, user: str) -> GlmResult:
         payload: dict[str, object] = {
@@ -113,13 +134,22 @@ class GlmClient:
         }
         timeout = aiohttp.ClientTimeout(total=self._config.timeout)
 
-        async with self._session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
-            if resp.status >= 400:
-                body = await resp.text()
-                raise GlmError(f"GLM HTTP {resp.status}: {body[:500]}")
-            data = await resp.json()
+        try:
+            async with self._session.post(
+                url, json=payload, headers=headers, timeout=timeout
+            ) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    raise GlmError(f"GLM HTTP {resp.status}: {body[:500]}")
+                data = await resp.json()
+        except aiohttp.ClientError as exc:
+            raise GlmError(f"GLM network error: {exc}") from exc
 
-        choice = data["choices"][0]["message"]
+        try:
+            choice = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise GlmError(f"GLM response malformed: {str(data)[:200]}") from exc
+
         content = (choice.get("content") or "").strip()
         reasoning = choice.get("reasoning_content") or choice.get("reasoning")
         if not content:
@@ -140,6 +170,7 @@ class GlmClient:
             f"- IPs: {fmt(indicators.get('ips', []))}",
             f"- Domains: {fmt(indicators.get('domains', []))}",
             f"- Emails: {fmt(indicators.get('emails', []))}",
+            f"- Handles: {fmt(indicators.get('handles', []))}",
         ]
         if enrichment:
             blob = json.dumps(enrichment, indent=2, sort_keys=True, default=str)

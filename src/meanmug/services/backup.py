@@ -83,7 +83,7 @@ def snapshot(repo_root: Path, target: str | None = None) -> dict[str, object]:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     snap_dir = backups_root / timestamp
-    snap_dir.mkdir(parents=True, exist_ok=False)
+    snap_dir.mkdir(parents=True, exist_ok=True)
     (snap_dir / "manifest.json").write_text(manifest_json, encoding="utf-8")
     for f in manifest:
         src = repo_root / f

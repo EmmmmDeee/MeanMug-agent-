@@ -19,7 +19,6 @@ log = logging.getLogger(__name__)
 # don't analyze every "ok" reply.
 _MIN_MESSAGE_LEN = 16
 # Don't analyze the same message twice on edit storms.
-_seen: set[int] = set()
 _SEEN_CAP = 4096
 
 
@@ -28,16 +27,17 @@ class IntelStreamCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self._seen: set[int] = set()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if not self._should_handle(message):
             return
-        if message.id in _seen:
+        if message.id in self._seen:
             return
-        if len(_seen) >= _SEEN_CAP:
-            _seen.clear()
-        _seen.add(message.id)
+        if len(self._seen) >= _SEEN_CAP:
+            self._seen.clear()
+        self._seen.add(message.id)
 
         indicators = extract_indicators(message.content)
         hits = await watch_hits(self.bot.db, indicators)
@@ -55,10 +55,11 @@ class IntelStreamCog(commands.Cog):
     def _should_handle(self, message: discord.Message) -> bool:
         if self.bot.user and message.author.id == self.bot.user.id:
             return False
-        watched = self.bot.config.intel_channel_ids  # type: ignore[attr-defined]
-        if not watched:
+        if not message.guild:
+            # ignore DMs entirely; spec says no DM surface
             return False
-        if message.channel.id not in watched:
+        watched = self.bot.config.intel_channel_ids
+        if not watched or message.channel.id not in watched:
             return False
         if not message.content or len(message.content) < _MIN_MESSAGE_LEN:
             return False
@@ -73,17 +74,26 @@ class IntelStreamCog(commands.Cog):
         try:
             await message.add_reaction("👀")
         except discord.HTTPException:
-            pass
+            log.debug("could not add reaction (missing perm or rate limit)")
 
         try:
-            infra = await enrich_indicators(self.bot.session, indicators) if (
-                self.bot.config.enrichment_enabled and (indicators["ips"] or indicators["domains"])  # type: ignore[attr-defined]
-            ) else {}
-            person = await enrich_person(
-                self.bot.session,
-                handles=indicators["handles"],
-                emails=indicators["emails"],
-            ) if self.bot.config.enrichment_enabled else {}  # type: ignore[attr-defined]
+            enrichment_on = self.bot.config.enrichment_enabled
+            has_infra = bool(indicators["ips"] or indicators["domains"])
+            infra = (
+                await enrich_indicators(self.bot.session, indicators)
+                if enrichment_on and has_infra
+                else {}
+            )
+            has_people = bool(indicators["handles"] or indicators["emails"])
+            person = (
+                await enrich_person(
+                    self.bot.session,
+                    handles=indicators["handles"],
+                    emails=indicators["emails"],
+                )
+                if enrichment_on and has_people
+                else {}
+            )
 
             subject = ", ".join(f"{i} ({k})" for i, k in hits)
             result = await self.bot.glm.analyze_person(
@@ -114,20 +124,19 @@ class IntelStreamCog(commands.Cog):
         analysis: str,
     ) -> None:
         target_channel: Optional[discord.abc.Messageable] = None
-        alert_id = self.bot.config.alert_channel_id  # type: ignore[attr-defined]
+        alert_id = self.bot.config.alert_channel_id
         if alert_id:
             target_channel = self.bot.get_channel(alert_id)
         if target_channel is None:
             target_channel = message.channel
 
-        chunks = chunk_text(analysis)
         header = (
             f"🔔 **Watchlist hit** — {', '.join(f'`{i}`' for i, _ in hits)}\n"
-            f"Source: {message.jump_url}\n\n{chunks[0]}"
+            f"Source: {message.jump_url}"
         )
         try:
             await target_channel.send(header[:2000])
-            for chunk in chunks[1:]:
+            for chunk in chunk_text(analysis):
                 await target_channel.send(chunk)
         except discord.HTTPException:
             log.exception("failed to deliver intel-stream alert")
