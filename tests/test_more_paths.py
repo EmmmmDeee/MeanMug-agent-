@@ -40,8 +40,8 @@ async def test_investigate_validates_case_before_glm(bot):
     with pytest.raises(Exception):  # AppCommandError
         await cog.investigate.callback(cog, interaction, "@alice", "no-such-case")
     # CRITICAL: no GLM call must have happened
-    assert all(c[0] != "person" for c in bot.glm.calls), (
-        "investigate burned GLM tokens before validating case"
+    assert all(c[0] != "agentic" for c in bot.glm.calls), (
+        "investigate spent a GLM agentic loop before validating case"
     )
 
 

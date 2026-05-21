@@ -13,7 +13,7 @@ from meanmug.services.backup import (
     latest_snapshot_name,
     snapshot,
 )
-from meanmug.services.storage import integrity_ok, token_usage_since
+from meanmug.services.storage import audits_count_since, integrity_ok
 
 log = logging.getLogger(__name__)
 
@@ -90,9 +90,9 @@ class OpsCog(commands.Cog):
             db_ok = False
         last_backup = latest_snapshot_name(self.repo_root) or "_none_"
         try:
-            pt_24h, ct_24h = await token_usage_since(self.bot.db, "-1 day")
+            audits_24h = await audits_count_since(self.bot.db, "-1 day")
         except Exception:
-            pt_24h, ct_24h = 0, 0
+            audits_24h = 0
 
         glm_cfg = self.bot.config.glm  # type: ignore[attr-defined]
         cache_size = len(getattr(self.bot.glm, "_cache", {}))  # type: ignore[attr-defined]
@@ -105,14 +105,13 @@ class OpsCog(commands.Cog):
         embed.add_field(name="Last backup", value=f"`{last_backup}`")
         embed.add_field(
             name="GLM",
-            value=f"`{glm_cfg.base_url}`\nmodel `{glm_cfg.model}` · thinking `{glm_cfg.thinking}`",
+            value=(
+                f"`{glm_cfg.base_url}`\n"
+                f"model `{glm_cfg.model}` · thinking `{glm_cfg.thinking}` · agentic tools enabled"
+            ),
             inline=False,
         )
-        embed.add_field(
-            name="Tokens (24h)",
-            value=f"prompt `{pt_24h}` · completion `{ct_24h}` · total `{pt_24h + ct_24h}`",
-            inline=True,
-        )
+        embed.add_field(name="Audits (24h)", value=f"`{audits_24h}`", inline=True)
         embed.add_field(name="GLM cache", value=f"`{cache_size}` entries", inline=True)
         embed.set_footer(text="MeanMug-Agent | Production Fabric")
         await interaction.followup.send(embed=embed)

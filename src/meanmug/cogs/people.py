@@ -72,29 +72,19 @@ class PeopleCog(commands.Cog):
             await interaction.followup.send("usage: `/investigate <subject>`", ephemeral=True)
             return
 
-        # Validate case BEFORE spending GLM tokens.
+        # Validate case BEFORE entering the agentic loop.
         case_id = await self._resolve_case_id(case)
 
-        indicators = extract_indicators(subject)
-        if not indicators["handles"] and not indicators["emails"]:
-            kind, norm = _classify(subject)
-            if kind == "handle":
-                indicators["handles"].append(norm)
-            elif kind == "email":
-                indicators["emails"].append(norm)
-
-        person_intel = await enrich_person(
-            self.bot.session,
-            handles=indicators["handles"],
-            emails=indicators["emails"],
-        ) if self.bot.config.enrichment_enabled else {}
+        user_message = (
+            f"Investigate this subject: {subject.strip()}\n\n"
+            "Use the available tools to gather public OSINT on the subject, "
+            "pivot on what you find, then produce the standard 5-section report."
+        )
 
         try:
-            result = await self.bot.glm.analyze_person(
-                subject, person_intel, indicators
-            )
+            agentic = await self.bot.glm.chat_with_tools(user_message)
         except GlmError as exc:
-            log.warning("GLM person analysis failed: %s", exc)
+            log.warning("GLM agentic investigation failed: %s", exc)
             await record_audit(
                 self.bot.db, interaction.user.id, subject, case_id=case_id
             )
@@ -105,12 +95,11 @@ class PeopleCog(commands.Cog):
             self.bot.db,
             interaction.user.id,
             subject,
-            analysis=result.content,
+            analysis=agentic.content,
             case_id=case_id,
-            reasoning=result.reasoning,
-            usage=None if result.cached else result.usage,
+            reasoning=agentic.reasoning,
         )
-        await self._dispatch(interaction, subject, person_intel, result, case=case)
+        await self._dispatch_agentic(interaction, subject, agentic, case=case)
 
     @app_commands.command(
         name="trace",
@@ -246,17 +235,60 @@ class PeopleCog(commands.Cog):
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk)
 
+    async def _dispatch_agentic(
+        self,
+        interaction: discord.Interaction,
+        subject: str,
+        agentic,
+        case: Optional[str] = None,
+    ) -> None:
+        chunks = chunk_text(agentic.content)
+        title = f"Investigation: {subject}"
+        if len(title) > 256:
+            title = title[:253] + "..."
+        embed = discord.Embed(
+            title=title,
+            description=chunks[0],
+            color=color_for_analysis(chunks[0]),
+        )
+        tool_counts: dict[str, int] = {}
+        for tc in agentic.tool_calls:
+            tool_counts[tc.name] = tool_counts.get(tc.name, 0) + 1
+        if tool_counts:
+            embed.add_field(
+                name=f"Tools invoked ({len(agentic.tool_calls)})",
+                value=" · ".join(
+                    f"`{n}`×{c}" if c > 1 else f"`{n}`" for n, c in sorted(tool_counts.items())
+                )[:1024],
+                inline=False,
+            )
+        if case:
+            embed.add_field(name="Case", value=f"`{case}`", inline=False)
+        embed.set_footer(text=_agentic_footer(agentic))
+        await interaction.followup.send(embed=embed)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk)
+
 
 def _footer_for(result) -> str:
     parts = [FOOTER]
     if getattr(result, "cached", False):
         parts.append("cache hit")
-    elif getattr(result, "usage", None):
-        pt, ct = result.usage
-        parts.append(f"{pt}+{ct} tok")
     if getattr(result, "reasoning", None):
         parts.append(f"🧠 {len(result.reasoning)}c reasoning")
     return " · ".join(parts)
+
+
+def _agentic_footer(agentic) -> str:
+    tools_used = ", ".join(sorted({tc.name for tc in agentic.tool_calls})) or "no tools"
+    label = (
+        f"{agentic.turns} turns · {len(agentic.tool_calls)} tool calls ({tools_used})"
+    )
+    if agentic.hit_turn_cap:
+        label += " · ⚠ turn cap"
+    if agentic.reasoning:
+        label += f" · 🧠 {len(agentic.reasoning)}c reasoning"
+    return f"{FOOTER} | {label}"
 
 
 async def setup(bot: commands.Bot) -> None:

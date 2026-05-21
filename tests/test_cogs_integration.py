@@ -169,11 +169,11 @@ async def test_watch_lifecycle(bot):
 
 
 @pytest.mark.asyncio
-async def test_investigate_routes_to_person(bot):
+async def test_investigate_routes_through_agentic_loop(bot):
     cog = PeopleCog(bot)
     interaction = FakeInteraction()
     await cog.investigate.callback(cog, interaction, "@alice", None)
-    assert any(c[0] == "person" for c in bot.glm.calls)
+    assert any(c[0] == "agentic" for c in bot.glm.calls)
 
 
 # ----------------------------- /changelog / /backup / /health -------------

@@ -5,13 +5,14 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import aiohttp
 
 from meanmug.core.config import GlmConfig
+from meanmug.services.tools import DISPATCH, TOOL_SCHEMAS, execute_tool_call
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,22 @@ class GlmResult:
     reasoning: str | None
     usage: tuple[int, int] | None  # (prompt_tokens, completion_tokens)
     cached: bool = False
+
+
+@dataclass
+class ToolCallRecord:
+    name: str
+    arguments: dict[str, Any]
+    result: dict[str, Any]
+
+
+@dataclass
+class AgenticResult:
+    content: str
+    reasoning: str | None
+    turns: int
+    tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    hit_turn_cap: bool = False
 
 
 class GlmError(RuntimeError):
@@ -125,6 +142,136 @@ class GlmClient:
             parts.append(blob)
             parts.append("```")
         return await self._chat(system=self._system_prompt, user="\n".join(parts))
+
+    async def chat_with_tools(
+        self,
+        user_message: str,
+        max_turns: int = 8,
+    ) -> AgenticResult:
+        """Run an agentic loop: GLM proposes tool_calls, we execute, repeat.
+
+        Returns when GLM emits a final assistant message with no tool_calls,
+        or after max_turns (at which point we force a final answer with
+        tools disabled).
+        """
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        tool_calls_made: list[ToolCallRecord] = []
+        reasoning: str | None = None
+
+        for turn in range(1, max_turns + 1):
+            assistant_msg = await self._tools_turn(messages, tools=TOOL_SCHEMAS)
+            reasoning = assistant_msg.get("reasoning_content") or assistant_msg.get("reasoning") or reasoning
+            tool_calls = assistant_msg.get("tool_calls") or []
+            if not tool_calls:
+                content = (assistant_msg.get("content") or "").strip()
+                if not content:
+                    raise GlmError("GLM returned no content and no tool calls")
+                return AgenticResult(
+                    content=content,
+                    reasoning=reasoning,
+                    turns=turn,
+                    tool_calls=tool_calls_made,
+                )
+
+            # Append the assistant turn that contains the tool_calls, then
+            # execute and append one tool message per call.
+            messages.append(self._assistant_record(assistant_msg))
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                name = fn.get("name", "")
+                args_json = fn.get("arguments", "{}")
+                result = await execute_tool_call(self._session, name, args_json)
+                try:
+                    parsed_args = json.loads(args_json or "{}")
+                except json.JSONDecodeError:
+                    parsed_args = {"raw": args_json}
+                tool_calls_made.append(
+                    ToolCallRecord(name=name, arguments=parsed_args, result=result)
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json.dumps(result, default=str),
+                    }
+                )
+
+        # Hit the turn cap. Force GLM to produce a final answer without tools.
+        log.info("agentic loop hit %d-turn cap; forcing final answer", max_turns)
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Tool budget exhausted. Produce the final report now using "
+                    "what you've gathered. No more tool calls."
+                ),
+            }
+        )
+        final = await self._tools_turn(messages, tools=None)
+        content = (final.get("content") or "").strip()
+        if not content:
+            raise GlmError("GLM returned empty content after turn cap")
+        reasoning = final.get("reasoning_content") or final.get("reasoning") or reasoning
+        return AgenticResult(
+            content=content,
+            reasoning=reasoning,
+            turns=max_turns + 1,
+            tool_calls=tool_calls_made,
+            hit_turn_cap=True,
+        )
+
+    @staticmethod
+    def _assistant_record(msg: dict[str, Any]) -> dict[str, Any]:
+        """Project an assistant response down to what the API expects on echo."""
+        record: dict[str, Any] = {
+            "role": "assistant",
+            "content": msg.get("content") or "",
+        }
+        if msg.get("tool_calls"):
+            record["tool_calls"] = msg["tool_calls"]
+        return record
+
+    async def _tools_turn(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self._config.model,
+            "temperature": self._config.temperature,
+            "messages": messages,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        if self._config.thinking:
+            payload["thinking"] = {"type": "enabled"}
+
+        url = f"{self._config.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._config.api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = aiohttp.ClientTimeout(total=self._config.timeout)
+
+        try:
+            async with self._session.post(
+                url, json=payload, headers=headers, timeout=timeout
+            ) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    raise GlmError(f"GLM HTTP {resp.status}: {body[:500]}")
+                data = await resp.json()
+        except aiohttp.ClientError as exc:
+            raise GlmError(f"GLM network error: {exc}") from exc
+
+        try:
+            return data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise GlmError(f"GLM response malformed: {str(data)[:200]}") from exc
 
     async def analyze_pivot(
         self,

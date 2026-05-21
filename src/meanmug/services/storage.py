@@ -86,6 +86,17 @@ async def record_audit(
     await db.commit()
 
 
+async def audits_count_since(
+    db: aiosqlite.Connection, interval: str = "-1 day"
+) -> int:
+    async with db.execute(
+        "SELECT COUNT(*) FROM audits WHERE created_at > datetime('now', ?)",
+        (interval,),
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 async def token_usage_since(
     db: aiosqlite.Connection, interval: str = "-1 day"
 ) -> tuple[int, int]:

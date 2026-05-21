@@ -48,8 +48,8 @@ def test_real_system_prompt_uses_markers():
     # But must include the actual directive content
     assert "MeanMug-Agent" in prompt
     assert "Report discipline" in prompt
-    # Reasonable size — under 3000 chars
-    assert len(prompt) < 3000, f"directive is {len(prompt)} chars; trim further"
+    # Reasonable size — under 4000 chars (agentic-mode section adds tool catalog).
+    assert len(prompt) < 4000, f"directive is {len(prompt)} chars; trim further"
 
 
 # ----------------------------- GlmClient cache ---------------------------

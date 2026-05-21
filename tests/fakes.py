@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from meanmug.services.glm import GlmResult
+from meanmug.services.glm import AgenticResult, GlmResult
 
 
 # ----------------------------- aiohttp fakes -------------------------------
@@ -180,3 +180,13 @@ class CannedGlm:
     async def analyze_person(self, *args, **kwargs) -> GlmResult:
         self.calls.append(("person", args, kwargs))
         return GlmResult(content=self._content, reasoning=None, usage=(10, 20), cached=False)
+
+    async def chat_with_tools(self, *args, **kwargs) -> AgenticResult:
+        self.calls.append(("agentic", args, kwargs))
+        return AgenticResult(
+            content=self._content,
+            reasoning=None,
+            turns=1,
+            tool_calls=[],
+            hit_turn_cap=False,
+        )
