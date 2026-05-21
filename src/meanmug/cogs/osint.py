@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from meanmug.services.discord_io import chunk_text
+from meanmug.services.discord_io import chunk_text, color_for_analysis
 from meanmug.services.enrich import enrich_indicators
 from meanmug.services.extract import extract_indicators
 from meanmug.services.glm import GlmError
@@ -69,9 +69,15 @@ class OSINTCog(commands.Cog):
             return
 
         await record_audit(
-            self.bot.db, interaction.user.id, raw, analysis=result.content, case_id=case_id
+            self.bot.db,
+            interaction.user.id,
+            raw,
+            analysis=result.content,
+            case_id=case_id,
+            reasoning=result.reasoning,
+            usage=None if result.cached else result.usage,
         )
-        await self._dispatch(interaction, indicators, enrichment, result.content, case=case)
+        await self._dispatch(interaction, indicators, enrichment, result, case=case)
 
     @app_commands.command(name="pivot", description="Pursue every downstream lead from one indicator.")
     @app_commands.describe(
@@ -104,10 +110,16 @@ class OSINTCog(commands.Cog):
             return
 
         await record_audit(
-            self.bot.db, interaction.user.id, indicator, analysis=result.content, case_id=case_id
+            self.bot.db,
+            interaction.user.id,
+            indicator,
+            analysis=result.content,
+            case_id=case_id,
+            reasoning=result.reasoning,
+            usage=None if result.cached else result.usage,
         )
         await self._dispatch(
-            interaction, indicators, enrichment, result.content, case=case, title="Pivot Report"
+            interaction, indicators, enrichment, result, case=case, title="Pivot Report"
         )
 
     @app_commands.command(name="history", description="Show your recent audits, optionally filtered by case.")
@@ -179,13 +191,13 @@ class OSINTCog(commands.Cog):
         interaction: discord.Interaction,
         indicators: dict[str, list[str]],
         enrichment: dict,
-        analysis: str,
+        result,
         case: Optional[str] = None,
         title: str = "OSINT Intelligence Report",
     ) -> None:
-        chunks = chunk_text(analysis)
+        chunks = chunk_text(result.content)
         embed = self._build_header_embed(
-            indicators, enrichment, chunks[0], case=case, title=title
+            indicators, enrichment, chunks[0], case=case, title=title, result=result
         )
         await interaction.followup.send(embed=embed)
         for chunk in chunks[1:]:
@@ -198,11 +210,12 @@ class OSINTCog(commands.Cog):
         analysis_head: str,
         case: Optional[str],
         title: str,
+        result,
     ) -> discord.Embed:
         embed = discord.Embed(
             title=title,
             description=analysis_head,
-            color=discord.Color.green(),
+            color=color_for_analysis(analysis_head),
         )
         for label, key in (("IPs", "ips"), ("Domains", "domains"), ("Emails", "emails")):
             values = indicators[key]
@@ -216,7 +229,7 @@ class OSINTCog(commands.Cog):
             embed.add_field(name="Enrichment", value=" · ".join(flags), inline=False)
         if case:
             embed.add_field(name="Case", value=f"`{case}`", inline=False)
-        embed.set_footer(text=FOOTER)
+        embed.set_footer(text=_footer_for(result))
         return embed
 
     @commands.Cog.listener()
@@ -236,6 +249,18 @@ class OSINTCog(commands.Cog):
             else interaction.response.send_message
         )
         await send(message, ephemeral=True)
+
+
+def _footer_for(result) -> str:
+    parts = [FOOTER]
+    if getattr(result, "cached", False):
+        parts.append("cache hit")
+    elif getattr(result, "usage", None):
+        pt, ct = result.usage
+        parts.append(f"{pt}+{ct} tok")
+    if getattr(result, "reasoning", None):
+        parts.append(f"🧠 {len(result.reasoning)}c reasoning")
+    return " · ".join(parts)
 
 
 def _enrichment_flags(enrichment: dict) -> list[str]:

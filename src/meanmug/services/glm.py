@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,29 +16,44 @@ from meanmug.core.config import GlmConfig
 log = logging.getLogger(__name__)
 
 _MAX_ENRICHMENT_CHARS = 4000
+_DIRECTIVE_BEGIN = "<!-- glm:directive:begin -->"
+_DIRECTIVE_END = "<!-- glm:directive:end -->"
+
+# Response cache: SHA-256(system + user) -> (expiry_monotonic, GlmResult)
+_CACHE_TTL_SECONDS = 60 * 60
+_CACHE_CAP = 1000
 
 
 def _candidate_prompt_paths() -> list[Path]:
-    """Locations to search for SYSTEM_PROMPT.md, in priority order."""
     env_override = os.environ.get("MEANMUG_SYSTEM_PROMPT_PATH")
     candidates: list[Path] = []
     if env_override:
         candidates.append(Path(env_override))
     candidates.append(Path.cwd() / "SYSTEM_PROMPT.md")
-    # src/meanmug/services/glm.py → parents[3] is the repo root for editable installs
     candidates.append(Path(__file__).resolve().parents[3] / "SYSTEM_PROMPT.md")
     return candidates
 
 
-def load_system_prompt() -> str:
-    """Read SYSTEM_PROMPT.md from the first existing candidate path.
+def _extract_directive(text: str) -> str:
+    """Return the model-facing region between markers, or the whole file.
 
-    Resolved lazily (not at module import) so that test runners and packaging
-    layouts that don't have the file at parents[3] still work.
+    Matches only markers that occupy their own line (so references to the
+    markers in surrounding prose don't break extraction).
     """
+    begin_line = f"\n{_DIRECTIVE_BEGIN}\n"
+    end_line = f"\n{_DIRECTIVE_END}\n"
+    begin = text.find(begin_line)
+    end = text.find(end_line)
+    if begin >= 0 and end > begin:
+        return text[begin + len(begin_line) : end].strip()
+    return text.strip()
+
+
+def load_system_prompt() -> str:
+    """Read SYSTEM_PROMPT.md and return the GLM-facing directive."""
     for path in _candidate_prompt_paths():
         if path.is_file():
-            return path.read_text(encoding="utf-8")
+            return _extract_directive(path.read_text(encoding="utf-8"))
     raise FileNotFoundError(
         "SYSTEM_PROMPT.md not found. Set MEANMUG_SYSTEM_PROMPT_PATH or run "
         "the bot from the repository root."
@@ -47,6 +64,8 @@ def load_system_prompt() -> str:
 class GlmResult:
     content: str
     reasoning: str | None
+    usage: tuple[int, int] | None  # (prompt_tokens, completion_tokens)
+    cached: bool = False
 
 
 class GlmError(RuntimeError):
@@ -54,12 +73,18 @@ class GlmError(RuntimeError):
 
 
 class GlmClient:
-    """Thin async wrapper over an OpenAI-compatible chat.completions endpoint."""
+    """Thin async wrapper over an OpenAI-compatible chat.completions endpoint.
+
+    Adds an in-memory response cache (SHA-256 keyed on system+user, TTL 1h,
+    FIFO eviction at 1000 entries) so repeat /osint or /pivot on the same
+    indicator within an hour doesn't burn tokens.
+    """
 
     def __init__(self, session: aiohttp.ClientSession, config: GlmConfig) -> None:
         self._session = session
         self._config = config
         self._system_prompt = load_system_prompt()
+        self._cache: dict[str, tuple[float, GlmResult]] = {}
 
     @property
     def system_prompt(self) -> str:
@@ -115,7 +140,28 @@ class GlmClient:
         user_block = focus + self._render_user_block(indicator, indicators, enrichment)
         return await self._chat(system=self._system_prompt, user=user_block)
 
+    @staticmethod
+    def _cache_key(system: str, user: str) -> str:
+        h = hashlib.sha256()
+        h.update(system.encode())
+        h.update(b"\x00")
+        h.update(user.encode())
+        return h.hexdigest()
+
     async def _chat(self, *, system: str, user: str) -> GlmResult:
+        key = self._cache_key(system, user)
+        now = time.monotonic()
+        hit = self._cache.get(key)
+        if hit is not None and hit[0] > now:
+            log.debug("glm cache hit %s", key[:12])
+            cached_result = hit[1]
+            return GlmResult(
+                content=cached_result.content,
+                reasoning=cached_result.reasoning,
+                usage=cached_result.usage,
+                cached=True,
+            )
+
         payload: dict[str, object] = {
             "model": self._config.model,
             "temperature": self._config.temperature,
@@ -154,7 +200,26 @@ class GlmClient:
         reasoning = choice.get("reasoning_content") or choice.get("reasoning")
         if not content:
             raise GlmError("GLM returned empty content")
-        return GlmResult(content=content, reasoning=reasoning)
+
+        usage: tuple[int, int] | None = None
+        if isinstance(data, dict) and isinstance(data.get("usage"), dict):
+            u = data["usage"]
+            pt = u.get("prompt_tokens")
+            ct = u.get("completion_tokens")
+            if isinstance(pt, int) and isinstance(ct, int):
+                usage = (pt, ct)
+
+        result = GlmResult(content=content, reasoning=reasoning, usage=usage, cached=False)
+        self._store(key, result, now)
+        return result
+
+    def _store(self, key: str, result: GlmResult, now: float) -> None:
+        if len(self._cache) >= _CACHE_CAP:
+            # Cheap FIFO eviction: drop the oldest 10%.
+            drop = list(self._cache)[: _CACHE_CAP // 10]
+            for k in drop:
+                self._cache.pop(k, None)
+        self._cache[key] = (now + _CACHE_TTL_SECONDS, result)
 
     @staticmethod
     def _render_user_block(

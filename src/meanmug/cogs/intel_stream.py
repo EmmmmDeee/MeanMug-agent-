@@ -134,6 +134,8 @@ class IntelStreamCog(commands.Cog):
             user_id=message.author.id,
             content=_message_text(message),
             analysis=result.content,
+            reasoning=result.reasoning,
+            usage=None if result.cached else result.usage,
         )
         await self._deliver(message, hits, result.content)
 

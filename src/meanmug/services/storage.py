@@ -13,13 +13,16 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 
 CREATE TABLE IF NOT EXISTS audits (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL,
-    content    TEXT    NOT NULL,
-    analysis   TEXT,
-    case_id    INTEGER REFERENCES cases(id),
-    refusal    INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL,
+    content           TEXT    NOT NULL,
+    analysis          TEXT,
+    reasoning         TEXT,
+    prompt_tokens     INTEGER,
+    completion_tokens INTEGER,
+    case_id           INTEGER REFERENCES cases(id),
+    refusal           INTEGER NOT NULL DEFAULT 0,
+    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS watchlist (
@@ -41,6 +44,9 @@ _ADDITIVE_COLUMNS = (
     ("analysis", "ALTER TABLE audits ADD COLUMN analysis TEXT"),
     ("case_id", "ALTER TABLE audits ADD COLUMN case_id INTEGER REFERENCES cases(id)"),
     ("refusal", "ALTER TABLE audits ADD COLUMN refusal INTEGER NOT NULL DEFAULT 0"),
+    ("reasoning", "ALTER TABLE audits ADD COLUMN reasoning TEXT"),
+    ("prompt_tokens", "ALTER TABLE audits ADD COLUMN prompt_tokens INTEGER"),
+    ("completion_tokens", "ALTER TABLE audits ADD COLUMN completion_tokens INTEGER"),
 )
 
 
@@ -67,12 +73,33 @@ async def record_audit(
     analysis: str | None = None,
     case_id: int | None = None,
     refusal: bool = False,
+    reasoning: str | None = None,
+    usage: tuple[int, int] | None = None,
 ) -> None:
+    pt, ct = (usage if usage is not None else (None, None))
     await db.execute(
-        "INSERT INTO audits (user_id, content, analysis, case_id, refusal) VALUES (?, ?, ?, ?, ?)",
-        (user_id, content[:2000], analysis, case_id, int(refusal)),
+        "INSERT INTO audits "
+        "(user_id, content, analysis, reasoning, case_id, refusal, prompt_tokens, completion_tokens) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, content[:2000], analysis, reasoning, case_id, int(refusal), pt, ct),
     )
     await db.commit()
+
+
+async def token_usage_since(
+    db: aiosqlite.Connection, interval: str = "-1 day"
+) -> tuple[int, int]:
+    """Sum prompt/completion tokens across audits since `interval` ago.
+
+    `interval` is a SQLite datetime modifier like '-1 day' or '-1 hour'.
+    """
+    async with db.execute(
+        "SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0) "
+        "FROM audits WHERE created_at > datetime('now', ?)",
+        (interval,),
+    ) as cur:
+        row = await cur.fetchone()
+    return (int(row[0]) if row and row[0] else 0, int(row[1]) if row and row[1] else 0)
 
 
 async def recent_audits(

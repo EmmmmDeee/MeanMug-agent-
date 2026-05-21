@@ -171,12 +171,12 @@ class CannedGlm:
 
     async def analyze_osint(self, *args, **kwargs) -> GlmResult:
         self.calls.append(("osint", args, kwargs))
-        return GlmResult(content=self._content, reasoning=None)
+        return GlmResult(content=self._content, reasoning=None, usage=(10, 20), cached=False)
 
     async def analyze_pivot(self, *args, **kwargs) -> GlmResult:
         self.calls.append(("pivot", args, kwargs))
-        return GlmResult(content=self._content, reasoning=None)
+        return GlmResult(content=self._content, reasoning=None, usage=(10, 20), cached=False)
 
     async def analyze_person(self, *args, **kwargs) -> GlmResult:
         self.calls.append(("person", args, kwargs))
-        return GlmResult(content=self._content, reasoning=None)
+        return GlmResult(content=self._content, reasoning=None, usage=(10, 20), cached=False)

@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from meanmug.services.discord_io import chunk_text
+from meanmug.services.discord_io import chunk_text, color_for_analysis
 from meanmug.services.extract import extract_indicators
 from meanmug.services.glm import GlmError
 from meanmug.services.people import enrich_person
@@ -102,9 +102,15 @@ class PeopleCog(commands.Cog):
             return
 
         await record_audit(
-            self.bot.db, interaction.user.id, subject, analysis=result.content, case_id=case_id
+            self.bot.db,
+            interaction.user.id,
+            subject,
+            analysis=result.content,
+            case_id=case_id,
+            reasoning=result.reasoning,
+            usage=None if result.cached else result.usage,
         )
-        await self._dispatch(interaction, subject, person_intel, result.content, case=case)
+        await self._dispatch(interaction, subject, person_intel, result, case=case)
 
     @app_commands.command(
         name="trace",
@@ -218,28 +224,39 @@ class PeopleCog(commands.Cog):
         interaction: discord.Interaction,
         subject: str,
         person_intel: dict,
-        analysis: str,
+        result,
         case: Optional[str] = None,
     ) -> None:
-        chunks = chunk_text(analysis)
-        # Embed titles cap at 256; keep room for the prefix.
+        chunks = chunk_text(result.content)
         title = f"People Intel: {subject}"
         if len(title) > 256:
             title = title[:253] + "..."
         embed = discord.Embed(
             title=title,
             description=chunks[0],
-            color=discord.Color.green(),
+            color=color_for_analysis(chunks[0]),
         )
         for h, d in (person_intel.get("handles") or {}).items():
             found = d.get("platforms_found", 0)
             embed.add_field(name=f"@{h}", value=f"{found}/3 platforms", inline=True)
         if case:
             embed.add_field(name="Case", value=f"`{case}`", inline=False)
-        embed.set_footer(text=FOOTER)
+        embed.set_footer(text=_footer_for(result))
         await interaction.followup.send(embed=embed)
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk)
+
+
+def _footer_for(result) -> str:
+    parts = [FOOTER]
+    if getattr(result, "cached", False):
+        parts.append("cache hit")
+    elif getattr(result, "usage", None):
+        pt, ct = result.usage
+        parts.append(f"{pt}+{ct} tok")
+    if getattr(result, "reasoning", None):
+        parts.append(f"🧠 {len(result.reasoning)}c reasoning")
+    return " · ".join(parts)
 
 
 async def setup(bot: commands.Bot) -> None:
