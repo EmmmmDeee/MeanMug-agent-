@@ -368,7 +368,8 @@ class GlmClient:
             payload["tool_choice"] = "auto"
         if self._config.thinking:
             payload["thinking"] = {"type": "enabled"}
-        return await self._post(payload)
+        msg, _envelope = await self._post(payload)
+        return msg
 
     async def _chat(self, *, system: str, user: str) -> GlmResult:
         key = self._cache_key(system, user)
@@ -390,18 +391,15 @@ class GlmClient:
         if self._config.thinking:
             payload["thinking"] = {"type": "enabled"}
 
-        choice = await self._post(payload)
+        choice, envelope = await self._post(payload)
         content = (choice.get("content") or "").strip()
         reasoning = choice.get("reasoning_content") or choice.get("reasoning")
         if not content:
             raise GlmError("GLM returned empty content")
 
         usage: tuple[int, int] | None = None
-        # _post returns the message; usage is on the outer envelope. We
-        # re-parse via an attribute we attached, if present.
-        env = getattr(choice, "_envelope", None)
-        if isinstance(env, dict) and isinstance(env.get("usage"), dict):
-            u = env["usage"]
+        u = envelope.get("usage") if isinstance(envelope, dict) else None
+        if isinstance(u, dict):
             pt, ct = u.get("prompt_tokens"), u.get("completion_tokens")
             if isinstance(pt, int) and isinstance(ct, int):
                 usage = (pt, ct)
@@ -410,7 +408,10 @@ class GlmClient:
         self._store(key, result, now)
         return result
 
-    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _post(
+        self, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """POST to z.ai chat completions. Return (assistant_message, full_envelope)."""
         url = f"{self._config.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._config.api_key}",
@@ -429,13 +430,7 @@ class GlmClient:
             msg = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
             raise GlmError(f"GLM response malformed: {str(data)[:200]}") from exc
-        # Stash the envelope so callers that care about usage can read it back.
-        # dict doesn't support attribute assignment; wrap in a subclass.
-        if isinstance(msg, dict):
-            wrapped = _MessageWithEnvelope(msg)
-            wrapped._envelope = data
-            return wrapped
-        return msg
+        return msg, data if isinstance(data, dict) else {}
 
     def _store(self, key: str, result: GlmResult, now: float) -> None:
         if len(self._cache) >= _CACHE_CAP:
@@ -482,10 +477,3 @@ class GlmClient:
         return "\n".join(parts)
 
 
-class _MessageWithEnvelope(dict):
-    """A dict subclass so we can stash the full GLM response envelope on it.
-
-    GLM's `usage` lives on the top-level response, not the message; callers
-    that want usage tokens read it back from msg._envelope["usage"].
-    """
-    _envelope: dict[str, Any] | None = None

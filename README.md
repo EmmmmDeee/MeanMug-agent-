@@ -39,35 +39,27 @@ full Discord 15-minute interaction window for long-horizon reasoning.
 
 ```
 src/meanmug/
-  __main__.py         entry point
-  bot.py              Bot subclass; verifies essentials on init; opens
-                      aiohttp + aiosqlite + GLM client in setup_hook;
-                      auto-discovers cogs; auto-snapshots configs
-  core/
-    config.py         env -> Config + nested GlmConfig
-    logging.py        stdlib logging
-  cogs/
-    osint.py          /osint, /pivot, /history; app-command error handler
-    cases.py          /case start|list|show|close
-    people.py         /investigate, /trace, /watch, /unwatch, /watchlist
-    intel_stream.py   on_message listener — autonomous trigger on watch hits
-    ops.py            /changelog, /backup, /health
-  services/           Discord-agnostic, individually testable
-    extract.py        IP / domain / email / @handle regex
-    enrich.py         Infra lookups: DoH DNS, RDAP, IP geo/ASN, Tor exits
-    people.py         Identity lookups: GitHub, GitLab, HackerNews, Gravatar
-    glm.py            GLM-5.1 client; loads SYSTEM_PROMPT.md at import
-    discord_io.py     2000-char-safe paragraph-aware text chunker
-    storage.py        SQLite schema + audits, cases, watchlist helpers
-    backup.py         Essential-file verification + content-hashed snapshots
+  __init__.py     version string
+  __main__.py     entry point + exit codes
+  config.py       env loader, Config + GlmConfig dataclasses, logging setup
+  database.py     SQLite schema + audit / case / watchlist helpers
+  intel.py        regex extraction · DoH/RDAP/geo/Tor infra lookups
+                  · GitHub/GitLab/HN/Gravatar people lookups · TTL cache
+  glm.py          GlmClient: pre-enriched chat + agentic loop · tool catalog
+                  · response cache · prompt-directive extraction
+  ops.py          essential-file verification · content-hashed snapshots
+                  · CHANGELOG parser
+  bot.py          MeanMugBot · OSINTCog · PeopleCog · CasesCog · OpsCog
+                  · IntelStreamCog · Discord helpers (chunker, color, etc.)
 ```
 
-### Layering
-
-- `bot.py` owns process lifecycle and shared handles.
-- `cogs/` translate Discord events to service calls — no business logic.
-- `services/` is pure Python over standard types — zero Discord imports
-  — so every piece is unit-testable in isolation.
+8 files, ~2,350 LOC. Concerns are grouped by stack layer:
+- `config` / `database` / `intel` / `glm` / `ops` have **zero Discord
+  imports** — every piece is unit-testable in isolation.
+- `bot.py` is the entire Discord-facing surface: the Bot subclass plus
+  all five cogs and the small UI helpers (chunker, color, footer).
+- `__main__.py` is just the entry point; it wires `Config` → `MeanMugBot`
+  → asyncio loop with friendly exit codes.
 
 ### Operational invariants
 
