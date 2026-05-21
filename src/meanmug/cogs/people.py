@@ -72,6 +72,9 @@ class PeopleCog(commands.Cog):
             await interaction.followup.send("usage: `/investigate <subject>`", ephemeral=True)
             return
 
+        # Validate case BEFORE spending GLM tokens.
+        case_id = await self._resolve_case_id(case)
+
         indicators = extract_indicators(subject)
         if not indicators["handles"] and not indicators["emails"]:
             kind, norm = _classify(subject)
@@ -92,11 +95,12 @@ class PeopleCog(commands.Cog):
             )
         except GlmError as exc:
             log.warning("GLM person analysis failed: %s", exc)
-            await record_audit(self.bot.db, interaction.user.id, subject)
+            await record_audit(
+                self.bot.db, interaction.user.id, subject, case_id=case_id
+            )
             await interaction.followup.send(f"⚠️ GLM analysis failed: `{exc}`", ephemeral=True)
             return
 
-        case_id = await self._resolve_case_id(case)
         await record_audit(
             self.bot.db, interaction.user.id, subject, analysis=result.content, case_id=case_id
         )
@@ -218,8 +222,12 @@ class PeopleCog(commands.Cog):
         case: Optional[str] = None,
     ) -> None:
         chunks = chunk_text(analysis)
+        # Embed titles cap at 256; keep room for the prefix.
+        title = f"People Intel: {subject}"
+        if len(title) > 256:
+            title = title[:253] + "..."
         embed = discord.Embed(
-            title=f"People Intel: {subject}",
+            title=title,
             description=chunks[0],
             color=discord.Color.green(),
         )
