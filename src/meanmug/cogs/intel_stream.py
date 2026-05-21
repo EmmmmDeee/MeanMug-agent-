@@ -22,6 +22,26 @@ _MIN_MESSAGE_LEN = 16
 _SEEN_CAP = 4096
 
 
+def _message_text(message: discord.Message) -> str:
+    """Concatenate message content with all text from any rich embeds."""
+    parts: list[str] = []
+    if message.content:
+        parts.append(message.content)
+    for embed in message.embeds or []:
+        if embed.title:
+            parts.append(embed.title)
+        if embed.description:
+            parts.append(embed.description)
+        for field in embed.fields or []:
+            if field.name:
+                parts.append(field.name)
+            if field.value:
+                parts.append(field.value)
+        if embed.footer and embed.footer.text:
+            parts.append(embed.footer.text)
+    return "\n".join(parts)
+
+
 class IntelStreamCog(commands.Cog):
     """Autonomous ingestion: react to watchlist hits in intel channels."""
 
@@ -39,7 +59,10 @@ class IntelStreamCog(commands.Cog):
             self._seen.clear()
         self._seen.add(message.id)
 
-        indicators = extract_indicators(message.content)
+        scan_text = _message_text(message)
+        if len(scan_text) < _MIN_MESSAGE_LEN:
+            return
+        indicators = extract_indicators(scan_text)
         hits = await watch_hits(self.bot.db, indicators)
         if not hits:
             return
@@ -56,12 +79,9 @@ class IntelStreamCog(commands.Cog):
         if self.bot.user and message.author.id == self.bot.user.id:
             return False
         if not message.guild:
-            # ignore DMs entirely; spec says no DM surface
             return False
         watched = self.bot.config.intel_channel_ids
         if not watched or message.channel.id not in watched:
-            return False
-        if not message.content or len(message.content) < _MIN_MESSAGE_LEN:
             return False
         return True
 
@@ -112,7 +132,7 @@ class IntelStreamCog(commands.Cog):
         await record_audit(
             self.bot.db,
             user_id=message.author.id,
-            content=message.content,
+            content=_message_text(message),
             analysis=result.content,
         )
         await self._deliver(message, hits, result.content)

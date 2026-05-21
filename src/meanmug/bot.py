@@ -46,12 +46,7 @@ class MeanMugBot(commands.Bot):
         self.db = await open_db(self.config.database_path)
         self.glm = GlmClient(self.session, self.config.glm)
         await self._load_cogs()
-        if self.config.guild_id:
-            guild = discord.Object(id=self.config.guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-        else:
-            await self.tree.sync()
+        await self._sync_commands()
         try:
             result = snapshot(self.repo_root)
             log.info("startup snapshot: %s", result)
@@ -67,14 +62,35 @@ class MeanMugBot(commands.Bot):
         await super().close()
 
     async def _load_cogs(self) -> None:
+        loaded = 0
         for module_info in pkgutil.iter_modules(cogs.__path__):
             name = f"{cogs.__name__}.{module_info.name}"
-            module = import_module(name)
-            setup = getattr(module, "setup", None)
-            if setup is None:
-                continue
-            await setup(self)
-            log.info("loaded cog %s", name)
+            try:
+                module = import_module(name)
+                setup = getattr(module, "setup", None)
+                if setup is None:
+                    log.warning("cog %s has no setup(); skipping", name)
+                    continue
+                await setup(self)
+                loaded += 1
+                log.info("loaded cog %s", name)
+            except Exception:
+                log.exception("failed to load cog %s; continuing", name)
+        if loaded == 0:
+            raise RuntimeError("no cogs loaded; refusing to come up")
+
+    async def _sync_commands(self) -> None:
+        try:
+            if self.config.guild_id:
+                guild = discord.Object(id=self.config.guild_id)
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                log.info("synced %d commands to guild %s", len(synced), self.config.guild_id)
+            else:
+                synced = await self.tree.sync()
+                log.info("synced %d global commands", len(synced))
+        except discord.HTTPException:
+            log.exception("command sync failed; bot will run with stale commands")
 
     async def on_ready(self) -> None:
         log.info("logged in as %s (id=%s)", self.user, getattr(self.user, "id", "?"))
