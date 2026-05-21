@@ -30,6 +30,8 @@ class Config:
     database_path: str
     http_pool_limit: int
     enrichment_enabled: bool
+    intel_channel_ids: frozenset[int]
+    alert_channel_id: int | None
     glm: GlmConfig
 
     @classmethod
@@ -41,6 +43,11 @@ class Config:
         if not api_key:
             raise RuntimeError("GLM_API_KEY is required")
         guild_raw = os.environ.get("DISCORD_GUILD_ID")
+        intel_raw = os.environ.get("INTEL_CHANNEL_IDS", "")
+        intel_ids = frozenset(
+            int(p) for p in (s.strip() for s in intel_raw.split(",")) if p
+        )
+        alert_raw = os.environ.get("ALERT_CHANNEL_ID")
         return cls(
             discord_token=token,
             guild_id=int(guild_raw) if guild_raw else None,
@@ -49,6 +56,8 @@ class Config:
             database_path=os.environ.get("DATABASE_PATH", "intelligence.db"),
             http_pool_limit=int(os.environ.get("HTTP_POOL_LIMIT", "50")),
             enrichment_enabled=_env_bool("ENRICHMENT_ENABLED", True),
+            intel_channel_ids=intel_ids,
+            alert_channel_id=int(alert_raw) if alert_raw else None,
             glm=GlmConfig(
                 api_key=api_key,
                 base_url=os.environ.get("GLM_BASE_URL", "https://api.z.ai/api/paas/v4").rstrip("/"),

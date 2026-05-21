@@ -29,8 +29,12 @@ class MeanMugBot(commands.Bot):
     glm: GlmClient
 
     def __init__(self, config: Config) -> None:
-        # Slash-only bot: default intents are sufficient. No privileged intents.
-        super().__init__(command_prefix=config.command_prefix, intents=discord.Intents.default())
+        # message_content is privileged but required: the bot listens on the
+        # configured intel channels for messages posted by sibling bots
+        # (OathNet Pro etc.) and reasons over them via GLM-5.1.
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix=config.command_prefix, intents=intents)
         self.config = config
         self.repo_root = REPO_ROOT
         verify_essentials(self.repo_root)

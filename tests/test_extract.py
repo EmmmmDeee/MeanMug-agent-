@@ -20,4 +20,11 @@ def test_dedupe_and_sort():
 
 def test_empty_input():
     out = extract_indicators("no indicators here")
-    assert out == {"ips": [], "domains": [], "emails": []}
+    assert out == {"ips": [], "domains": [], "emails": [], "handles": []}
+
+
+def test_extracts_handles_but_not_emails_or_mentions():
+    out = extract_indicators("follow @alice. ping @bob_dev, mail bad@evil.io. <@1234>")
+    assert out["handles"] == ["alice", "bob_dev"]
+    assert "evil.io" in out["domains"]
+    assert out["emails"] == ["bad@evil.io"]

@@ -5,6 +5,7 @@ config. Reverse-chronological. Each entry: date (UTC), one-line
 summary, commit SHA.
 
 ## 2026-05-21
+- `pending` — People-centric autonomous OSINT: `/investigate`, `/trace`, `/watch`, `/unwatch`, `/watchlist`; new `intel_stream` cog listens on `INTEL_CHANNEL_IDS` for sibling-bot messages and triggers GLM analysis on watchlist hits; people-OSINT service (GitHub/GitLab/HackerNews/Gravatar); handle extraction; watchlist table; `message_content` intent re-enabled to ingest sibling-bot messages (Discord is the data bus, not HTTP).
 - `450abc4` — Drop unused `message_content` privileged intent; add `ENRICHMENT_ENABLED` toggle for sensitive operations; `/history` gains a `case:` filter; reconcile `SYSTEM_PROMPT.md` with the actual command surface (no `/case append`); add GitHub Actions test workflow.
 - `9f10cca` — Add keyless live OSINT enrichment (DoH DNS, RDAP, IP geo/ASN, Tor exit list); GLM receives enrichment block alongside indicators; per-user cooldowns on `/osint` + `/pivot`; pytest suite for pure services; SYSTEM_PROMPT.md updated to direct GLM to cite enrichment fields rather than caveat them.
 - `d33e6f6` — Implement spec-mandated commands and startup invariants: `/pivot`, `/history`, `/case start|list|show|close`, `/changelog`, `/backup`, `/health`; refuse start when essential files missing; auto-snapshot configs on startup; audits gain `case_id` and `refusal` columns.

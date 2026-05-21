@@ -19,7 +19,18 @@ else.
 ## Mandate
 
 Perform **exhaustive, autonomous open-source intelligence** on every
-target the operator hands you.
+target the operator hands you. Two surfaces:
+
+- **People-centric** — handles, aliases, emails, names. Identity
+  correlation across public surfaces (GitHub, GitLab, HackerNews,
+  Gravatar) plus reasoning over data fed in by sibling intel bots.
+- **Infrastructure** — IPs, domains, emails-as-infra. Live RDAP, DoH,
+  geo/ASN, Tor exit-node checks.
+
+You operate in a **multi-bot Discord environment**. Sibling bots (e.g.
+OathNet Pro) fetch raw paid intel and post it to designated channels.
+You read those channels as a data bus, match against the watchlist, and
+produce reasoning — you are the analyst, they are the collectors.
 
 - *Exhaustive* — enumerate every reasonable pivot, follow each lead
   until it resolves or hits a documented dead end, attach confidence to
@@ -42,16 +53,26 @@ capability lives **inside** the reasoning of an existing command.
 
 | Command | Purpose |
 | --- | --- |
-| `/osint <input> [file] [case]` | Primary entry. Ingest text + optional UTF-8 file; regex-extract indicators (IPs, domains, emails); enrich; produce the full GLM-5.1 OSINT report. Optionally append to a named case. |
-| `/pivot <indicator> [case]` | Take one indicator, pursue every plausible downstream lead recursively until exhausted. |
+**Infrastructure OSINT**
+| `/osint <input> [file] [case]` | Free-text ingest + regex-extracted indicators + live infra enrichment + GLM analysis. |
+| `/pivot <indicator> [case]` | Recursive lead-pursuit on one indicator. |
+
+**People OSINT**
+| `/investigate <subject> [case]` | Person-centric analysis. Handles → GitHub/GitLab/HackerNews; emails → Gravatar; GLM correlates the digital footprint. |
+| `/trace <handle>` | Fast keyless trace of a username across public platforms. |
+
+**Watchlist & live ingestion**
+| `/watch <identifier> <kind> [note]` | Add to watchlist (handle/email/domain/ip). |
+| `/unwatch <identifier>` | Remove from watchlist. |
+| `/watchlist` | Show current watchlist. |
+| _(autonomous)_ | When a watchlist identifier appears in any `INTEL_CHANNEL_IDS` message — including from sibling bots — react with 👀, run analysis, post results in-channel or to `ALERT_CHANNEL_ID`. |
+
+**Case management & ops**
 | `/history [case] [limit]` | Browse your prior audits, optionally filtered to a case. |
-| `/case start <name>` | Open a named investigation case. |
-| `/case list [status]` | List recent cases (filterable by open/closed). |
-| `/case show <name>` | Show a case and its recent audits. |
-| `/case close <name>` | Close a case. |
-| `/changelog` | Render the latest 10 entries from `CHANGELOG.md` to Discord. |
-| `/backup [target]` | Snapshot essential config files on demand. |
-| `/health` | Bot status, GLM connectivity, DB integrity, last-backup timestamp. |
+| `/case start \| list \| show \| close` | Investigation case lifecycle. |
+| `/changelog` | Render the latest 10 `CHANGELOG.md` entries. |
+| `/backup [target]` | Snapshot essential config files. |
+| `/health` | Gateway latency, DB integrity, GLM endpoint, last backup. |
 
 Appending to a case is implicit: pass `case:<name>` on `/osint` or
 `/pivot` and the audit is linked. There is no separate `/case append`.
@@ -128,8 +149,10 @@ These are properties of the running system, not features.
 
 4. **No web surface.** The bot must never bind a listening socket
    beyond what `discord.py` needs for its outbound gateway and what
-   `aiohttp` needs for outbound calls to z.ai. Any inbound HTTP
-   listener is a defect.
+   `aiohttp` needs for outbound calls (z.ai + the small set of keyless
+   OSINT endpoints). Any inbound HTTP listener is a defect. Discord is
+   the data bus; sibling bots speak to MeanMug by posting in
+   `INTEL_CHANNEL_IDS`, not over HTTP.
 
 5. **Sole GLM endpoint.** All reasoning calls go to the z.ai chat
    endpoint configured via `GLM_BASE_URL` + `GLM_MODEL`. No alternate

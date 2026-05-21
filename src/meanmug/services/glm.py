@@ -53,6 +53,33 @@ class GlmClient:
         user_block = self._render_user_block(raw, indicators, enrichment)
         return await self._chat(system=OSINT_SYSTEM_PROMPT, user=user_block)
 
+    async def analyze_person(
+        self,
+        subject: str,
+        person_intel: dict[str, Any],
+        indicators: dict[str, list[str]],
+        infra_enrichment: dict[str, Any] | None = None,
+    ) -> GlmResult:
+        focus = (
+            f"PERSON FOCUS — Subject: `{subject}`. The Person Intel block contains "
+            "results from keyless public lookups (GitHub, GitLab, HackerNews, Gravatar). "
+            "Build a digital-footprint report: identity correlation across platforms, "
+            "consistent biographical signals, name/location/employer hints, linked "
+            "accounts, and confidence-rated pivots for further investigation by "
+            "sibling intel bots.\n\n"
+        )
+        parts = [focus, self._render_user_block(subject, indicators, infra_enrichment)]
+        if person_intel:
+            blob = json.dumps(person_intel, indent=2, sort_keys=True, default=str)
+            if len(blob) > _MAX_ENRICHMENT_CHARS:
+                blob = blob[:_MAX_ENRICHMENT_CHARS] + "\n... (truncated)"
+            parts.append("")
+            parts.append("Person intel (treat as authoritative for this run):")
+            parts.append("```json")
+            parts.append(blob)
+            parts.append("```")
+        return await self._chat(system=OSINT_SYSTEM_PROMPT, user="\n".join(parts))
+
     async def analyze_pivot(
         self,
         indicator: str,

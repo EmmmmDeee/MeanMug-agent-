@@ -11,13 +11,23 @@ the operational log is [`CHANGELOG.md`](CHANGELOG.md).
 
 | Command | Purpose |
 | --- | --- |
-| `/osint <input> [file] [case]` | Primary analysis. Regex-extract indicators, then run GLM-5.1 with the OSINT prompt. |
-| `/pivot <indicator> [case]` | Pursue every downstream lead from one indicator. |
-| `/history [limit]` | Your recent audits (ephemeral). |
-| `/case start <name>` | Open a new investigation case. |
-| `/case list [status]` | List recent cases. |
-| `/case show <name>` | Case details and recent audits. |
-| `/case close <name>` | Close a case. |
+**Infrastructure**
+| `/osint <input> [file] [case]` | Regex-extract + live enrichment + GLM analysis. |
+| `/pivot <indicator> [case]` | Recursive downstream lead pursuit. |
+
+**People**
+| `/investigate <subject> [case]` | Identity correlation across GitHub/GitLab/HN/Gravatar + GLM. |
+| `/trace <handle>` | Fast keyless username lookup; embed-only. |
+
+**Watchlist & live ingestion**
+| `/watch <identifier> <kind> [note]` | Add `handle`/`email`/`domain`/`ip` to the watchlist. |
+| `/unwatch <identifier>` | Remove from watchlist. |
+| `/watchlist` | Show what's being watched. |
+| _(autonomous)_ | Messages in `INTEL_CHANNEL_IDS` are scanned; on a watchlist hit, MeanMug reacts 👀, runs analysis, posts to source channel or `ALERT_CHANNEL_ID`. |
+
+**Cases & ops**
+| `/history [case] [limit]` | Your recent audits, optionally case-filtered. |
+| `/case start \| list \| show \| close` | Investigation case lifecycle. |
 | `/changelog` | Latest 10 entries from `CHANGELOG.md`. |
 | `/backup [target]` | Snapshot essential config files. |
 | `/health` | Gateway latency, DB integrity, GLM endpoint, last backup. |
@@ -39,13 +49,16 @@ src/meanmug/
   cogs/
     osint.py          /osint, /pivot, /history; app-command error handler
     cases.py          /case start|list|show|close
+    people.py         /investigate, /trace, /watch, /unwatch, /watchlist
+    intel_stream.py   on_message listener — autonomous trigger on watch hits
     ops.py            /changelog, /backup, /health
   services/           Discord-agnostic, individually testable
-    extract.py        IP / domain / email regex
-    enrich.py         Keyless live lookups: DoH DNS, RDAP, IP geo/ASN, Tor exits
+    extract.py        IP / domain / email / @handle regex
+    enrich.py         Infra lookups: DoH DNS, RDAP, IP geo/ASN, Tor exits
+    people.py         Identity lookups: GitHub, GitLab, HackerNews, Gravatar
     glm.py            GLM-5.1 client; loads SYSTEM_PROMPT.md at import
     discord_io.py     2000-char-safe paragraph-aware text chunker
-    storage.py        SQLite schema + audit and case helpers
+    storage.py        SQLite schema + audits, cases, watchlist helpers
     backup.py         Essential-file verification + content-hashed snapshots
 ```
 

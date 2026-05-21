@@ -22,8 +22,19 @@ CREATE TABLE IF NOT EXISTS audits (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS watchlist (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    identifier TEXT    NOT NULL,
+    kind       TEXT    NOT NULL,
+    note       TEXT,
+    added_by   INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (identifier, kind)
+);
+
 CREATE INDEX IF NOT EXISTS idx_audits_user ON audits(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audits_case ON audits(case_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watchlist_ident ON watchlist(identifier);
 """
 
 _ADDITIVE_COLUMNS = (
@@ -136,6 +147,69 @@ async def case_audits(
         (case_id, limit),
     ) as cur:
         return list(await cur.fetchall())
+
+
+async def add_watch(
+    db: aiosqlite.Connection,
+    identifier: str,
+    kind: str,
+    added_by: int,
+    note: str | None = None,
+) -> bool:
+    try:
+        await db.execute(
+            "INSERT INTO watchlist (identifier, kind, note, added_by) VALUES (?, ?, ?, ?)",
+            (identifier.lower(), kind, note, added_by),
+        )
+        await db.commit()
+        return True
+    except aiosqlite.IntegrityError:
+        return False
+
+
+async def remove_watch(db: aiosqlite.Connection, identifier: str, kind: str | None = None) -> int:
+    if kind:
+        cursor = await db.execute(
+            "DELETE FROM watchlist WHERE identifier = ? AND kind = ?",
+            (identifier.lower(), kind),
+        )
+    else:
+        cursor = await db.execute(
+            "DELETE FROM watchlist WHERE identifier = ?", (identifier.lower(),)
+        )
+    await db.commit()
+    return cursor.rowcount or 0
+
+
+async def list_watches(
+    db: aiosqlite.Connection, limit: int = 50
+) -> list[tuple[int, str, str, str | None, int, str]]:
+    async with db.execute(
+        "SELECT id, identifier, kind, note, added_by, created_at "
+        "FROM watchlist ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ) as cur:
+        return list(await cur.fetchall())
+
+
+async def watch_hits(
+    db: aiosqlite.Connection, indicators: dict[str, list[str]]
+) -> list[tuple[str, str]]:
+    """Return [(identifier, kind), ...] from the watchlist that appear in indicators."""
+    candidates: set[tuple[str, str]] = set()
+    for kind, values in (
+        ("ip", indicators.get("ips", [])),
+        ("domain", indicators.get("domains", [])),
+        ("email", indicators.get("emails", [])),
+        ("handle", indicators.get("handles", [])),
+    ):
+        for v in values:
+            candidates.add((v.lower(), kind))
+    if not candidates:
+        return []
+    async with db.execute("SELECT identifier, kind FROM watchlist") as cur:
+        watches = {(row[0], row[1]) for row in await cur.fetchall()}
+    return sorted(candidates & watches)
 
 
 async def integrity_ok(db: aiosqlite.Connection) -> bool:
