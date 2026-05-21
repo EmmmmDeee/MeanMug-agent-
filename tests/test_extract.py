@@ -1,4 +1,4 @@
-from meanmug.services.extract import extract_indicators
+from meanmug.intel import extract_indicators
 
 
 def test_extracts_ipv4():

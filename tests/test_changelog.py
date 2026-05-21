@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from meanmug.cogs.ops import _parse_changelog
+from meanmug.ops import parse_changelog as _parse_changelog
 
 ROOT = Path(__file__).resolve().parents[1]
 

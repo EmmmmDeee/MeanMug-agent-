@@ -6,8 +6,8 @@ import os
 os.environ.setdefault("DISCORD_TOKEN", "x")
 os.environ.setdefault("GLM_API_KEY", "x")
 
-from meanmug.core.config import Config
-from meanmug.services.glm import GlmClient
+from meanmug.config import Config
+from meanmug.glm import GlmClient
 
 
 class _FakeResponse:

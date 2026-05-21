@@ -7,9 +7,8 @@ import sys
 import discord
 
 from meanmug.bot import MeanMugBot
-from meanmug.core.config import Config
-from meanmug.core.logging import configure_logging
-from meanmug.services.backup import MissingEssentialError
+from meanmug.config import Config, configure_logging
+from meanmug.ops import MissingEssentialError
 
 log = logging.getLogger("meanmug")
 

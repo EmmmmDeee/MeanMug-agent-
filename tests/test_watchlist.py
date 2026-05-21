@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from meanmug.services.storage import (
+from meanmug.database import (
     add_watch,
     list_watches,
     open_db,

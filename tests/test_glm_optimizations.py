@@ -8,9 +8,9 @@ os.environ.setdefault("GLM_API_KEY", "x")
 
 import pytest
 
-from meanmug.core.config import Config
-from meanmug.services.discord_io import chunk_text, color_for_analysis
-from meanmug.services.glm import (
+from meanmug.config import Config
+from meanmug.bot import chunk_text, color_for_analysis
+from meanmug.glm import (
     GlmClient,
     GlmResult,
     _DIRECTIVE_BEGIN,
@@ -18,7 +18,7 @@ from meanmug.services.glm import (
     _extract_directive,
     load_system_prompt,
 )
-from meanmug.services.storage import open_db, record_audit, token_usage_since
+from meanmug.database import open_db, record_audit, token_usage_since
 
 
 # ----------------------------- directive extraction ----------------------
@@ -223,7 +223,7 @@ async def test_token_usage_returns_zero_when_no_audits(tmp_path):
 
 
 def test_footer_shows_token_count_when_not_cached():
-    from meanmug.cogs.osint import _footer_for
+    from meanmug.bot import _footer_for
     r = GlmResult(content="x", reasoning=None, usage=(123, 45), cached=False)
     f = _footer_for(r)
     assert "123+45 tok" in f
@@ -231,7 +231,7 @@ def test_footer_shows_token_count_when_not_cached():
 
 
 def test_footer_shows_cache_hit():
-    from meanmug.cogs.osint import _footer_for
+    from meanmug.bot import _footer_for
     r = GlmResult(content="x", reasoning=None, usage=(123, 45), cached=True)
     f = _footer_for(r)
     assert "cache hit" in f
@@ -239,7 +239,7 @@ def test_footer_shows_cache_hit():
 
 
 def test_footer_marks_reasoning_when_present():
-    from meanmug.cogs.osint import _footer_for
+    from meanmug.bot import _footer_for
     r = GlmResult(content="x", reasoning="long thought trace", usage=(10, 20), cached=False)
     f = _footer_for(r)
     assert "🧠" in f

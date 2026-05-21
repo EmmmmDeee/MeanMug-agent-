@@ -1,5 +1,7 @@
+"""Configuration: env loader, frozen Config dataclass, logging setup."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
@@ -67,3 +69,10 @@ class Config:
                 temperature=float(os.environ.get("GLM_TEMPERATURE", "0.3")),
             ),
         )
+
+
+def configure_logging(level: str = "INFO") -> None:
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )

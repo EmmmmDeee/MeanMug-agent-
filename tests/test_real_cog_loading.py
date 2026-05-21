@@ -16,13 +16,13 @@ import discord
 import pytest
 from discord.ext import commands
 
-from meanmug.cogs.cases import CasesCog
-from meanmug.cogs.intel_stream import IntelStreamCog
-from meanmug.cogs.ops import OpsCog
-from meanmug.cogs.osint import OSINTCog
-from meanmug.cogs.people import PeopleCog
-from meanmug.core.config import Config
-from meanmug.services.storage import open_db
+from meanmug.bot import CasesCog
+from meanmug.bot import IntelStreamCog
+from meanmug.bot import OpsCog
+from meanmug.bot import OSINTCog
+from meanmug.bot import PeopleCog
+from meanmug.config import Config
+from meanmug.database import open_db
 
 from tests.fakes import CannedGlm, FakeHttpSession
 

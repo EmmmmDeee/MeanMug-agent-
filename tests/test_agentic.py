@@ -10,9 +10,9 @@ os.environ.setdefault("GLM_API_KEY", "x")
 
 import pytest
 
-from meanmug.core.config import Config
-from meanmug.services.glm import AgenticResult, GlmClient, GlmError
-from meanmug.services.tools import DISPATCH, TOOL_SCHEMAS, execute_tool_call
+from meanmug.config import Config
+from meanmug.glm import AgenticResult, GlmClient, GlmError
+from meanmug.glm import DISPATCH, TOOL_SCHEMAS, execute_tool_call
 
 
 # ----------------------------- fake aiohttp + scripted GLM ---------------
@@ -123,7 +123,7 @@ def test_agentic_loop_executes_one_tool_then_finalizes():
     async def fake_github(session, username):
         return {"login": username, "name": "Alice"}
 
-    from meanmug.services import tools
+    from meanmug import glm as tools
     original = tools.DISPATCH["github_user"]
     tools.DISPATCH["github_user"] = fake_github
     try:
@@ -159,7 +159,7 @@ def test_agentic_loop_hits_turn_cap_and_forces_final():
     async def fake_github(session, username):
         return {"login": username}
 
-    from meanmug.services import tools
+    from meanmug import glm as tools
     original = tools.DISPATCH["github_user"]
     tools.DISPATCH["github_user"] = fake_github
     try:
@@ -185,7 +185,7 @@ def test_agentic_loop_recovers_from_tool_failure():
     async def explode(session, username):
         raise RuntimeError("github is down")
 
-    from meanmug.services import tools
+    from meanmug import glm as tools
     original = tools.DISPATCH["github_user"]
     tools.DISPATCH["github_user"] = explode
     try:

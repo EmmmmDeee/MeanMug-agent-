@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from meanmug.services.backup import (
+from meanmug.ops import (
     ESSENTIAL_FILES,
     MissingEssentialError,
     snapshot,

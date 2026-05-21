@@ -1,3 +1,5 @@
+"""Operational concerns: essential-file verification, content-hashed config
+backups, and CHANGELOG parsing for the /changelog slash command."""
 from __future__ import annotations
 
 import hashlib
@@ -13,9 +15,9 @@ ESSENTIAL_FILES: tuple[str, ...] = (
     "SYSTEM_PROMPT.md",
     ".env.example",
     "pyproject.toml",
-    "src/meanmug/core/config.py",
-    "src/meanmug/services/glm.py",
-    "src/meanmug/services/storage.py",
+    "src/meanmug/config.py",
+    "src/meanmug/glm.py",
+    "src/meanmug/database.py",
 )
 
 
@@ -58,9 +60,8 @@ def snapshot(repo_root: Path, target: str | None = None) -> dict[str, object]:
     Content-hashed: if the current state matches the latest snapshot's manifest,
     returns {'status': 'no-op'}. Otherwise creates a new directory.
     """
-    files: tuple[str, ...]
     if target is None:
-        files = ESSENTIAL_FILES
+        files: tuple[str, ...] = ESSENTIAL_FILES
     else:
         if target not in ESSENTIAL_FILES:
             raise ValueError(f"{target!r} is not in the essential set")
@@ -102,3 +103,13 @@ def snapshot(repo_root: Path, target: str | None = None) -> dict[str, object]:
 def latest_snapshot_name(repo_root: Path) -> str | None:
     snap = _latest_snapshot(repo_root / "backups")
     return snap.name if snap else None
+
+
+def parse_changelog(text: str) -> list[str]:
+    """Return one string per bullet entry in CHANGELOG.md, top-to-bottom."""
+    out: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("- ") and "`" in s:
+            out.append(s[2:])
+    return out

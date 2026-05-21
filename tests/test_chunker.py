@@ -1,4 +1,4 @@
-from meanmug.services.discord_io import chunk_text
+from meanmug.bot import chunk_text
 
 
 def test_short_text_single_chunk():

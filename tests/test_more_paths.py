@@ -11,11 +11,11 @@ os.environ.setdefault("ENRICHMENT_ENABLED", "false")
 import pytest
 from discord.app_commands import Choice
 
-from meanmug.cogs.cases import CasesCog
-from meanmug.cogs.ops import OpsCog
-from meanmug.cogs.people import PeopleCog
-from meanmug.core.config import Config
-from meanmug.services.storage import open_db
+from meanmug.bot import CasesCog
+from meanmug.bot import OpsCog
+from meanmug.bot import PeopleCog
+from meanmug.config import Config
+from meanmug.database import open_db
 
 from tests.fakes import CannedGlm, FakeBot, FakeHttpSession, FakeInteraction
 
@@ -66,7 +66,7 @@ async def test_long_analysis_paginates_to_multiple_messages(tmp_path):
     bot = FakeBot(db=db, session=FakeHttpSession(), glm=CannedGlm(content=long_content), config=cfg)
     bot.repo_root = tmp_path  # type: ignore[attr-defined]
 
-    from meanmug.cogs.osint import OSINTCog
+    from meanmug.bot import OSINTCog
     cog = OSINTCog(bot)
     interaction = FakeInteraction()
     await cog.osint.callback(cog, interaction, "8.8.8.8", None, None)
@@ -112,7 +112,7 @@ async def test_case_list_with_status_filter(bot):
 @pytest.mark.asyncio
 async def test_backup_with_target(bot, tmp_path):
     # Populate the essential set under repo_root so snapshot has files to read.
-    from meanmug.services.backup import ESSENTIAL_FILES
+    from meanmug.ops import ESSENTIAL_FILES
     import shutil
     real_root = __import__("pathlib").Path(__file__).resolve().parents[1]
     for f in ESSENTIAL_FILES:
@@ -175,7 +175,7 @@ async def test_unwatch_unknown_identifier(bot):
 
 @pytest.mark.asyncio
 async def test_record_audit_refusal_flag(bot):
-    from meanmug.services.storage import record_audit
+    from meanmug.database import record_audit
     await record_audit(bot.db, 1, "danger", refusal=True)
     async with bot.db.execute("SELECT refusal FROM audits") as cur:
         row = await cur.fetchone()

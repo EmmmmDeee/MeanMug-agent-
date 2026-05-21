@@ -8,13 +8,13 @@ os.environ.setdefault("GLM_API_KEY", "x")
 
 import pytest
 
-from meanmug.cogs.cases import CasesCog
-from meanmug.cogs.intel_stream import IntelStreamCog, _message_text
-from meanmug.cogs.ops import OpsCog
-from meanmug.cogs.osint import OSINTCog
-from meanmug.cogs.people import PeopleCog, _classify
-from meanmug.core.config import Config
-from meanmug.services.storage import add_watch, open_db
+from meanmug.bot import CasesCog
+from meanmug.bot import IntelStreamCog, _message_text
+from meanmug.bot import OpsCog
+from meanmug.bot import OSINTCog
+from meanmug.bot import PeopleCog, _classify
+from meanmug.config import Config
+from meanmug.database import add_watch, open_db
 
 from tests.fakes import (
     CannedGlm,

@@ -8,8 +8,8 @@ os.environ.setdefault("GLM_API_KEY", "x")
 
 import pytest
 
-from meanmug.core.config import Config
-from meanmug.services.glm import GlmClient, GlmError
+from meanmug.config import Config
+from meanmug.glm import GlmClient, GlmError
 
 
 class _Resp:

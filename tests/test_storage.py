@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from meanmug.services.storage import (
+from meanmug.database import (
     case_audits,
     close_case,
     create_case,
