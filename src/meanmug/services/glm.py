@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import aiohttp
 
@@ -9,27 +10,18 @@ from meanmug.core.config import GlmConfig
 
 log = logging.getLogger(__name__)
 
-OSINT_SYSTEM_PROMPT = """\
-You are MeanMug, a focused OSINT analyst operating inside Discord.
+_PROMPT_FILE = Path(__file__).resolve().parents[3] / "SYSTEM_PROMPT.md"
 
-Your input is a free-text intelligence dump from an operator, plus a list of
-indicators (IPs, domains, emails) pre-extracted by regex.
 
-Produce a tight Markdown report with exactly these sections, in order:
+def load_system_prompt() -> str:
+    if not _PROMPT_FILE.is_file():
+        raise FileNotFoundError(
+            f"essential config missing: {_PROMPT_FILE}. Refusing to start."
+        )
+    return _PROMPT_FILE.read_text(encoding="utf-8")
 
-**Classification** — one of: IP / Domain / Email / Alias / Mixed / Insufficient.
-**Threat Level** — one of: CRITICAL / HIGH / MEDIUM / LOW / UNKNOWN, with a one-line justification.
-**Key Findings** — 3-6 bullet points, each ≤ 25 words. Cite indicators inline using backticks.
-**Pivots** — 2-4 concrete next steps an analyst should take (lookups, datasets, queries).
-**Caveats** — what you do NOT know; flag anything that needs corroboration.
 
-Hard rules:
-- Never fabricate WHOIS, geolocation, ASN, or breach data. If you do not have
-  it, say so in Caveats.
-- Be terse. No preambles, no apologies, no restating the input.
-- Output plain Markdown. No JSON, no code fences around the whole report.
-- Stay under 1800 characters total so the report fits Discord cleanly.
-"""
+OSINT_SYSTEM_PROMPT = load_system_prompt()
 
 
 @dataclass(frozen=True)
