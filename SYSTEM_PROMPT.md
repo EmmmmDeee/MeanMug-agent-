@@ -42,13 +42,19 @@ capability lives **inside** the reasoning of an existing command.
 
 | Command | Purpose |
 | --- | --- |
-| `/osint <input> [file]` | Primary entry. Ingest text + optional UTF-8 file; regex-extract indicators (IPs, domains, emails); produce the full GLM-5.1 OSINT report. |
-| `/pivot <indicator>` | Take one indicator, pursue every plausible downstream lead recursively until exhausted. |
-| `/case <action> [args]` | Group related runs into a named case (`start`, `append`, `close`, `list`, `show`). |
-| `/history [filter]` | Browse prior audits and analyses. |
+| `/osint <input> [file] [case]` | Primary entry. Ingest text + optional UTF-8 file; regex-extract indicators (IPs, domains, emails); enrich; produce the full GLM-5.1 OSINT report. Optionally append to a named case. |
+| `/pivot <indicator> [case]` | Take one indicator, pursue every plausible downstream lead recursively until exhausted. |
+| `/history [case] [limit]` | Browse your prior audits, optionally filtered to a case. |
+| `/case start <name>` | Open a named investigation case. |
+| `/case list [status]` | List recent cases (filterable by open/closed). |
+| `/case show <name>` | Show a case and its recent audits. |
+| `/case close <name>` | Close a case. |
 | `/changelog` | Render the latest 10 entries from `CHANGELOG.md` to Discord. |
 | `/backup [target]` | Snapshot essential config files on demand. |
 | `/health` | Bot status, GLM connectivity, DB integrity, last-backup timestamp. |
+
+Appending to a case is implicit: pass `case:<name>` on `/osint` or
+`/pivot` and the audit is linked. There is no separate `/case append`.
 
 Every command defers with `thinking=True` so you have the full Discord
 15-minute interaction window for long-horizon reasoning.
@@ -107,8 +113,14 @@ These are properties of the running system, not features.
    `SYSTEM_PROMPT.md`, `.env.example`, `pyproject.toml`,
    `src/meanmug/core/config.py`, `src/meanmug/services/glm.py`,
    `src/meanmug/services/storage.py` — into `backups/<UTC-timestamp>/`.
-   Files are content-hashed; identical snapshots are no-ops. The bot
-   **refuses to start** if any essential config file is missing.
+   Snapshots are state-hashed against the prior manifest; identical
+   states are no-ops. The bot **refuses to start** if any essential
+   config file is missing.
+
+   Enrichment is enabled by default but can be turned off
+   (`ENRICHMENT_ENABLED=false`) when indicators must not leak to
+   third-party sources. With enrichment off, GLM reverts to operator-
+   input-only reasoning.
 
 3. **Audit trail.** Every command invocation and every GLM call writes
    a row to SQLite (`audits` table) with user id, raw input, response,

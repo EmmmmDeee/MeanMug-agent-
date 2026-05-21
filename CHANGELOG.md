@@ -5,6 +5,7 @@ config. Reverse-chronological. Each entry: date (UTC), one-line
 summary, commit SHA.
 
 ## 2026-05-21
+- `pending` — Drop unused `message_content` privileged intent; add `ENRICHMENT_ENABLED` toggle for sensitive operations; `/history` gains a `case:` filter; reconcile `SYSTEM_PROMPT.md` with the actual command surface (no `/case append`); add GitHub Actions test workflow.
 - `9f10cca` — Add keyless live OSINT enrichment (DoH DNS, RDAP, IP geo/ASN, Tor exit list); GLM receives enrichment block alongside indicators; per-user cooldowns on `/osint` + `/pivot`; pytest suite for pure services; SYSTEM_PROMPT.md updated to direct GLM to cite enrichment fields rather than caveat them.
 - `d33e6f6` — Implement spec-mandated commands and startup invariants: `/pivot`, `/history`, `/case start|list|show|close`, `/changelog`, `/backup`, `/health`; refuse start when essential files missing; auto-snapshot configs on startup; audits gain `case_id` and `refusal` columns.
 - `dcd2d8e` — Add `SYSTEM_PROMPT.md` as the canonical agent spec; load it from `glm.py`; seed this changelog. Establishes the changelog + config-backup invariants.

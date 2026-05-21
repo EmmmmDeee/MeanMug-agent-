@@ -29,9 +29,8 @@ class MeanMugBot(commands.Bot):
     glm: GlmClient
 
     def __init__(self, config: Config) -> None:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        super().__init__(command_prefix=config.command_prefix, intents=intents)
+        # Slash-only bot: default intents are sufficient. No privileged intents.
+        super().__init__(command_prefix=config.command_prefix, intents=discord.Intents.default())
         self.config = config
         self.repo_root = REPO_ROOT
         verify_essentials(self.repo_root)

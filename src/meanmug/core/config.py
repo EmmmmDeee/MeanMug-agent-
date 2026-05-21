@@ -29,6 +29,7 @@ class Config:
     log_level: str
     database_path: str
     http_pool_limit: int
+    enrichment_enabled: bool
     glm: GlmConfig
 
     @classmethod
@@ -47,6 +48,7 @@ class Config:
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             database_path=os.environ.get("DATABASE_PATH", "intelligence.db"),
             http_pool_limit=int(os.environ.get("HTTP_POOL_LIMIT", "50")),
+            enrichment_enabled=_env_bool("ENRICHMENT_ENABLED", True),
             glm=GlmConfig(
                 api_key=api_key,
                 base_url=os.environ.get("GLM_BASE_URL", "https://api.z.ai/api/paas/v4").rstrip("/"),

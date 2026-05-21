@@ -65,13 +65,25 @@ async def record_audit(
 
 
 async def recent_audits(
-    db: aiosqlite.Connection, user_id: int, limit: int
+    db: aiosqlite.Connection,
+    user_id: int,
+    limit: int,
+    case_id: int | None = None,
 ) -> list[tuple[int, str, str | None, str]]:
-    async with db.execute(
-        "SELECT id, content, analysis, created_at "
-        "FROM audits WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-        (user_id, limit),
-    ) as cur:
+    if case_id is None:
+        query = (
+            "SELECT id, content, analysis, created_at "
+            "FROM audits WHERE user_id = ? ORDER BY created_at DESC LIMIT ?"
+        )
+        args: tuple = (user_id, limit)
+    else:
+        query = (
+            "SELECT id, content, analysis, created_at "
+            "FROM audits WHERE user_id = ? AND case_id = ? "
+            "ORDER BY created_at DESC LIMIT ?"
+        )
+        args = (user_id, case_id, limit)
+    async with db.execute(query, args) as cur:
         return list(await cur.fetchall())
 
 

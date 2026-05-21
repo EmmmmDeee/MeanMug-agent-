@@ -32,6 +32,11 @@ async def test_full_case_lifecycle(tmp_path):
     recent = await recent_audits(db, 1, 5)
     assert recent[0][1] == "input"
 
+    by_case = await recent_audits(db, 1, 5, case_id=case_id)
+    assert len(by_case) == 1
+    no_match = await recent_audits(db, 1, 5, case_id=9999)
+    assert no_match == []
+
     listing = await list_cases(db, status="open")
     assert any(c[1] == "alpha" for c in listing)
 

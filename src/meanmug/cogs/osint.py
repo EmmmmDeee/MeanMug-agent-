@@ -58,7 +58,7 @@ class OSINTCog(commands.Cog):
         case_id = await self._resolve_case(case)
         raw = await self._ingest(input_data, file)
         indicators = extract_indicators(raw)
-        enrichment = await enrich_indicators(self.bot.session, indicators)
+        enrichment = await self._enrich(indicators)
 
         try:
             result = await self.bot.glm.analyze_osint(raw, indicators, enrichment=enrichment)
@@ -93,7 +93,7 @@ class OSINTCog(commands.Cog):
 
         case_id = await self._resolve_case(case)
         indicators = extract_indicators(indicator)
-        enrichment = await enrich_indicators(self.bot.session, indicators)
+        enrichment = await self._enrich(indicators)
 
         try:
             result = await self.bot.glm.analyze_pivot(indicator, indicators, enrichment=enrichment)
@@ -110,22 +110,48 @@ class OSINTCog(commands.Cog):
             interaction, indicators, enrichment, result.content, case=case, title="Pivot Report"
         )
 
-    @app_commands.command(name="history", description="Show your recent audits.")
-    @app_commands.describe(limit="Number of audits to show (1-25).")
-    async def history(self, interaction: discord.Interaction, limit: int = 10) -> None:
+    @app_commands.command(name="history", description="Show your recent audits, optionally filtered by case.")
+    @app_commands.describe(
+        case="Optional case name to filter by.",
+        limit="Number of audits to show (1-25).",
+    )
+    async def history(
+        self,
+        interaction: discord.Interaction,
+        case: Optional[str] = None,
+        limit: int = 10,
+    ) -> None:
         limit = max(1, min(limit, 25))
-        rows = await recent_audits(self.bot.db, interaction.user.id, limit)
+        case_id: Optional[int] = None
+        if case:
+            row = await get_case_by_name(self.bot.db, case)
+            if row is None:
+                await interaction.response.send_message(
+                    f"⚠️ no case `{case}`.", ephemeral=True
+                )
+                return
+            case_id = row[0]
+        rows = await recent_audits(
+            self.bot.db, interaction.user.id, limit, case_id=case_id
+        )
         if not rows:
-            await interaction.response.send_message("_no history yet_", ephemeral=True)
+            await interaction.response.send_message("_no history_", ephemeral=True)
             return
         lines = [
             f"`#{r[0]:>4}` `{r[3]}` — {(r[1] or '').replace(chr(10), ' ')[:90]}"
             for r in rows
         ]
+        header = f"**Your last {len(rows)} audits"
+        header += f" in `{case}`**" if case else "**"
         body = "\n".join(lines)
         await interaction.response.send_message(
-            f"**Your last {len(rows)} audits**\n{body[:1900]}", ephemeral=True
+            f"{header}\n{body[:1900]}", ephemeral=True
         )
+
+    async def _enrich(self, indicators: dict[str, list[str]]) -> dict:
+        if not self.bot.config.enrichment_enabled:
+            return {}
+        return await enrich_indicators(self.bot.session, indicators)
 
     async def _resolve_case(self, case: Optional[str]) -> Optional[int]:
         if not case:
